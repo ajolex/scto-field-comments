@@ -30,49 +30,79 @@ program define sctocomments, rclass
     if "`filesub'" == "" local filesub "Comments*.csv"
     if "`out'" == "" local out "comments.dta"
     
-    // build the CSV files directory
-    if "`mediafolder'" == "" {
-        local media "`path'"
+    // normalize path separators for portability
+    local oslower = lower(c(os))
+    local dirsep "/"
+    if strpos("`oslower'", "windows") {
+        local dirsep = char(92)
     }
-    else {
-        local media = "`path'" + "/" + "`mediafolder'"
+    local forward "/"
+    local backslash = char(92)
+
+    local path_clean = subinstr("`path'", "`backslash'", "`forward'", .)
+    local mediafolder_clean = subinstr("`mediafolder'", "`backslash'", "`forward'", .)
+    if "`dirsep'" == "`backslash'" {
+        local path_clean = subinstr("`path_clean'", "`forward'", "`backslash'", .)
+        local mediafolder_clean = subinstr("`mediafolder_clean'", "`forward'", "`backslash'", .)
     }
 
-    // check directory exists
-    capture confirm dir "`media'"
-    if _rc {
+    // trim trailing separators from base path (keep drive roots intact)
+    while substr("`path_clean'", -1, 1) == "`dirsep'" & strlen("`path_clean'") > 1 {
+        local path_clean = substr("`path_clean'", 1, strlen("`path_clean'") - 1)
+    }
+
+    // allow mediafolder to be absolute (so users can override path())
+    if "`mediafolder_clean'" != "" {
+        while substr("`mediafolder_clean'", -1, 1) == "`dirsep'" & strlen("`mediafolder_clean'") > 1 {
+            local mediafolder_clean = substr("`mediafolder_clean'", 1, strlen("`mediafolder_clean'") - 1)
+        }
+    }
+
+    if "`mediafolder_clean'" == "" {
+        local media "`path_clean'"
+    }
+    else if regexm("`mediafolder'", "^[A-Za-z]:") | inlist(substr("`mediafolder'", 1, 1), "`forward'", "`backslash'") {
+        local media "`mediafolder_clean'"
+    }
+    else {
+        local media "`path_clean'`dirsep'`mediafolder_clean'"
+    }
+
+    di as txt "Checking directory: `media'"
+    mata: st_local("dir_exists_flag", strofreal(direxists("`media'")))
+    if "`dir_exists_flag'" != "1" {
         di as err "directory not found: `media'"
         exit 198
     }
+    local dir_exists_flag
 
     // list files using full path (avoid cd issues)
     local pattern "`filesub'"
-    local filenames: dir "`media'" files "`pattern'"
+    local filenames : dir "`media'" files "`pattern'"
     if "`filenames'" == "" {
         di as err "no files found matching `pattern' in `media'"
         exit 499
     }
 
-    // store current working directory
-    local original_dir = c(pwd)
-    
+    // initialize combined dataset tempfile
     tempfile comments_combined
     preserve
     clear
-    save `comments_combined', emptyok
+    save "`comments_combined'", emptyok
     restore
-
+    local combined_initialized 0
+    
     foreach f of local filenames {
         di as txt "processing `f'..."
         
         // use full path for file import
-        local fullpath "`media'/`f'"
+        local fullpath "`media'`dirsep'`f'"
         
         // safer import with better error handling
-        capture import delimited using "`fullpath'", varnames(1) stringcols(_all) clear
+        capture import delimited using "`fullpath'", varnames(1) stringcols(_all) clear stripquotes(yes) bindquotes(strict)
         if _rc {
             di as txt "  trying alternative import method..."
-            capture import delimited using "`fullpath'", varnames(0) stringcols(_all) clear
+            capture import delimited using `"`f'"', varnames(0) stringcols(_all) clear stripquotes(yes) bindquotes(strict)
             if _rc {
                 di as err "  failed to import `f', skipping..."
                 continue
@@ -114,8 +144,6 @@ program define sctocomments, rclass
         // create file and id variables
         gen file = "`f'"
         // extract uuid part from filename (remove "Comments-" prefix and ".csv" suffix)
-        local fname = "`f'"
-        // in-stata string manipulation
         gen id = substr(file, 10, .)
         replace id = subinstr(id, ".csv", "", .)
 
@@ -123,31 +151,35 @@ program define sctocomments, rclass
         capture drop if fieldname=="Field name"
         capture drop if comment==""
 
-        // safely append to combined tempfile
-        capture append using `comments_combined', force
-        if _rc {
-            di as err "  failed to append `f' to combined dataset"
-            continue
+        // append to combined dataset on disk
+        if `combined_initialized' {
+            capture append using "`comments_combined'", force
+            if _rc {
+                di as err "  failed to append `f' to combined dataset"
+                continue
+            }
         }
-        
-        capture save `comments_combined', replace
+        else {
+            local combined_initialized 1
+        }
+
+        capture save "`comments_combined'", replace
         if _rc {
             di as err "  failed to save combined dataset after `f'"
             exit 198
         }
     }
 
+    if `combined_initialized' == 0 {
+        di as err "no comments data found in any CSV files"
+        exit 499
+    }
+
     // load combined dataset
-    capture use `comments_combined', clear
+    capture use "`comments_combined'", clear
     if _rc {
         di as err "failed to load combined comments dataset"
         exit 198
-    }
-    
-    // check if we have any data
-    if _N == 0 {
-        di as err "no comments data found in any CSV files"
-        exit 499
     }
 
     // split fieldname by slash into parts
@@ -215,9 +247,9 @@ program define sctocomments, rclass
         capture confirm file `"`use'"'
         if _rc == 0 {
             tempfile current_data
-            save `current_data', replace
+            save "`current_data'", replace
             use `"`use'"', clear
-            merge 1:m key using `current_data', keep(match using) nogen
+            merge 1:m key using "`current_data'", keep(match using) nogen
         }
         else {
             di as err "warning: file specified in use() not found: `use'"
@@ -252,17 +284,23 @@ program define sctocomments, rclass
     rename `label_val' label_val
 
     // save output
-    local outfile = "`path'/`out'"
+    local outfile "`out'"
+    if !regexm("`outfile'", "^[A-Za-z]:") & !inlist(substr("`outfile'", 1, 1), "`forward'", "`backslash'") {
+        local outfile "`path_clean'`dirsep'`outfile'"
+    }
+    if "`dirsep'" == "`backslash'" {
+        local outfile = subinstr("`outfile'", "`forward'", "`backslash'", .)
+    }
+
     capture save `"`outfile'"', replace
     if _rc {
         di as err "failed to save output file: `outfile'"
         exit 198
     }
 
+    local obs_count = _N
+
     di as txt "saved combined comments to `outfile'"
-    di as txt "dataset contains `=_N' comment observations"
-    
-    // restore original directory if changed
-    quietly cd "`original_dir'"
+    di as txt "dataset contains `obs_count' comment observations"
 
 end
