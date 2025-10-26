@@ -9,7 +9,8 @@ program define sctocomments, rclass
         sctocomments, path(string) [filesub(string) out(string)]
 
     Options:
-        path(string)     : base folder that contains the media folder (required)
+        path(string)     : base folder that contains the comments CSV folder (required)
+        mediafolder(string): name of subfolder containing CSV files (default: "media")
         filesub(string)  : filename pattern for comment files (default: "Comments*.csv")
         out(string)      : output filepath for the combined comments .dta (default: "comments.dta" inside path)
         survey(string)   : full path to survey dataset to merge with (optional)
@@ -17,16 +18,16 @@ program define sctocomments, rclass
 
     Notes:
       - This ado expects SurveyCTO's exported comments CSV files (names like Comments-<uuid>.csv) to live in
-        <path>/media. It will import them, extract the uuid from the filename,
+        <path>/<mediafolder>. It will import them, extract the uuid from the filename,
         and create a dataset with variables: caseid fo_id fc_id variable comment value label_val (when available).
-      - Provide `path()` to point to your project folder which contains the media folder.
+      - Provide `path()` to point to your project folder and `mediafolder()` for the subfolder name.
     */
 
-    syntax , PATH(string) [FILESUB(string "Comments*.csv") OUT(string "comments.dta") ///
-        SURVEY(string) USE(string)]
+    syntax , PATH(string) [MEDIAFOLDER(string "media") FILESUB(string "Comments*.csv") ///
+        OUT(string "comments.dta") SURVEY(string) USE(string)]
 
-    // build the media directory
-    local media = "`path'" + "/media"
+    // build the CSV files directory
+    local media = "`path'" + "/" + "`mediafolder'"
 
     // check directory
     capture cd "`media'"

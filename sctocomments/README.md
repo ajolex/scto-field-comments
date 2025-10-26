@@ -16,6 +16,11 @@ Basic usage:
 sctocomments, path("C:/Users/you/yourproject")
 ```
 
+With custom folder name for CSV files:
+```stata
+sctocomments, path("C:/Users/you/yourproject") mediafolder("comments")
+```
+
 With survey dataset for merging:
 ```stata
 sctocomments, path("C:/Users/you/yourproject") survey("C:/path/to/survey_data.dta")
@@ -28,7 +33,8 @@ sctocomments, path("C:/Users/you/yourproject") use("C:/path/to/main_survey.dta")
 
 ## Options
 
-- `path(string)`: Base project folder containing `media` folder (required)
+- `path(string)`: Base project folder containing CSV files subfolder (required)
+- `mediafolder(string)`: Name of subfolder containing CSV files (default: "media")
 - `filesub(string)`: Filename pattern for comment CSVs (default: "Comments*.csv")  
 - `out(string)`: Output filename (default: "comments.dta")
 - `survey(string)`: Full path to survey dataset to merge with (optional)
@@ -36,9 +42,9 @@ sctocomments, path("C:/Users/you/yourproject") use("C:/path/to/main_survey.dta")
 
 ## File Structure Expected
 
-```
+```text
 your_project_folder/
-├── media/
+├── media/                     # (or any folder name you specify)
 │   ├── Comments-uuid1.csv
 │   ├── Comments-uuid2.csv
 │   └── ...

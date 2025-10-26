@@ -8,13 +8,16 @@ sctocomments \- Collate SurveyCTO comments CSVs into a single Stata dataset
 .B sctocomments, path(string) [filesub(string) out(string)]
 .SH DESCRIPTION
 The \fBsctocomments\fR command imports SurveyCTO comments CSV exports (files named like \fBComments-<uuid>.csv\fR) found in the
-\fBmedia\fR folder under the folder provided in \fBpath()\fR. It collates them into a single Stata dataset and
+subfolder specified by \fBmediafolder()\fR under the folder provided in \fBpath()\fR. It collates them into a single Stata dataset and
 saves the result to \fBout()\fR inside the \fBpath()\fR folder.
 
 .SH OPTIONS
 .TP
 .B path(string)
-Base project folder that contains \fBmedia\fR folder. Required.
+Base project folder that contains the CSV files subfolder. Required.
+.TP
+.B mediafolder(string)
+Name of subfolder containing comment CSV files. Default: \fBmedia\fR.
 .TP
 .B filesub(string)
 Filename pattern for the comment CSVs. Default: \fBComments*.csv\fR.
@@ -34,6 +37,11 @@ Suppose your project folder is \fBC:/Projects/PSPS\fR and the comments CSVs are 
 
 .TP
 .B sctocomments, path("C:/Projects/PSPS")
+
+With custom folder name:
+
+.TP
+.B sctocomments, path("C:/Projects/PSPS") mediafolder("comments")
 
 To merge with a survey dataset:
 

@@ -7,8 +7,11 @@ set more off
 // change this to your path
 local mypath "C:/path/to/your/project"
 
-// basic usage
+// basic usage (looks for CSV files in media subfolder)
 sctocomments, path("`mypath'")
+
+// with custom folder name for CSV files
+// sctocomments, path("`mypath'") mediafolder("comments")
 
 // with survey dataset for merging
 // sctocomments, path("`mypath'") survey("`mypath'/my_survey_data.dta")
