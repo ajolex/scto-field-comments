@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>sctocomments — rendered README</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,'Helvetica Neue',Arial;margin:32px;line-height:1.6;color:#222}
+    pre, code{background:#f6f8fa;padding:8px;border-radius:6px;overflow:auto}
+    pre{padding:12px}
+    h1,h2,h3{color:#0b3d91}
+    table{border-collapse:collapse}
+    table,th,td{border:1px solid #ddd;padding:6px}
+    .note{background:#fff8e1;border-left:4px solid #ffd54f;padding:8px;margin:12px 0}
+  </style>
+</head>
+<body>
+  <h1>📊 sctocomments: SurveyCTO Comments Collation Tool</h1>
+
+  <p><strong><code>sctocomments.ado</code></strong> is a Stata utility for collating and organizing <strong>SurveyCTO comment CSV files</strong> (e.g., <code>Comments-*.csv</code>) into a single Stata dataset.</p>
+
+  <p>It merges these comments with a survey dataset, extracts variable names and labels, and allows easy customization of key identifiers (e.g., case ID, enumerator ID, field coordinator ID). This tool is particularly useful for <strong>processing field comments</strong> in SurveyCTO-based data collections — especially when handling <strong>hierarchical field names</strong> from groups and repeat instances.</p>
+
+  <hr>
+
+  <h2>🧭 Overview</h2>
+  <p>The <code>sctocomments</code> program:</p>
+  <ul>
+    <li>Collects and combines all SurveyCTO comment CSV files (typically stored in a <code>media</code> subfolder).</li>
+    <li>Extracts variable names from the <strong>last non-empty segment</strong> of each field path.</li>
+    <li>Handles <strong>repeat group instances</strong> and <strong>nested field structures</strong> automatically.</li>
+    <li>Optionally removes <code>grp_</code> prefixes from variable names.</li>
+    <li>Merges with a survey dataset to include <strong>key IDs, variable values, and labels</strong>.</li>
+  </ul>
+
+  <hr>
+
+  <h2>⚙️ Installation</h2>
+  <h3>1. Manual Installation</h3>
+  <p>Save <code>sctocomments.ado</code> to your Stata personal ado directory. In Stata, run:</p>
+  <pre><code>sysdir</code></pre>
+  <p>Then copy the file to the PERSONAL path, for example:</p>
+  <ul>
+    <li><strong>Windows:</strong> <code>%USERPROFILE%\ado\personal\</code></li>
+    <li><strong>macOS/Linux:</strong> <code>~/ado/personal/</code></li>
+  </ul>
+
+  <h3>2. Install via GitHub (optional)</h3>
+  <pre><code>git clone https://github.com/yourusername/scto-field-comments.git</code></pre>
+
+  <p>Or directly from within Stata (point to the package folder so Stata can find <code>stata.toc</code>):</p>
+  <pre><code>net install sctocomments, from("https://raw.githubusercontent.com/ajolex/scto-field-comments/master/sctocomments/") replace</code></pre>
+
+  <h3>3. Verify Installation</h3>
+  <pre><code>which sctocomments</code></pre>
+
+  <hr>
+
+  <h2>🚀 Usage</h2>
+  <h3>Syntax</h3>
+  <pre><code>sctocomments, path(string) caseid(string) [mediafolder(string) filesub(string) out(string) survey(string) use(string) keepvars(string) stripgrp]</code></pre>
+
+  <h3>Options (summary)</h3>
+  <table>
+    <tr><th>Option</th><th>Description</th></tr>
+    <tr><td><code>path(string)</code></td><td><strong>Required.</strong> Base folder containing the comments CSV folder.</td></tr>
+    <tr><td><code>caseid(string)</code></td><td><strong>Required.</strong> Variable name for the unique case ID in the survey dataset.</td></tr>
+    <tr><td><code>mediafolder(string)</code></td><td>Subfolder containing comment CSVs (default: <code>"media"</code>).</td></tr>
+    <tr><td><code>filesub(string)</code></td><td>Filename pattern for comment files (default: <code>"Comments*.csv"</code>).</td></tr>
+    <tr><td><code>out(string)</code></td><td>Output <code>.dta</code> filepath (default: <code>"comments.dta"</code> inside <code>path</code>).</td></tr>
+    <tr><td><code>survey(string)</code></td><td>Full path to survey dataset to merge with (optional).</td></tr>
+    <tr><td><code>use(string)</code></td><td>Path to an auxiliary dataset for extracting variable values/labels (optional).</td></tr>
+    <tr><td><code>keepvars(string)</code></td><td>Space-separated list of additional variables to keep (e.g., <code>"fo_id fc_id"</code>).</td></tr>
+    <tr><td><code>stripgrp</code></td><td>Flag to remove the <code>grp_</code> prefix from variable names.</td></tr>
+  </table>
+
+  <h3>Examples</h3>
+  <p><strong>Basic usage</strong></p>
+  <pre><code>sctocomments, path("C:\Users\AJolex\Documents\scto-field-comments") ///
+    caseid("caseid") survey("survey_data.dta")</code></pre>
+
+  <p><strong>With custom variables and options</strong></p>
+  <pre><code>sctocomments, path("C:\Users\AJolex\Documents\scto-field-comments") ///
+    caseid("unique_id") keepvars("enum_id coord_id") ///
+    survey("survey_data.dta") use("use_data.dta") stripgrp</code></pre>
+
+  <hr>
+
+  <h2>⚡ Quick Start Example</h2>
+  <pre><code>scto-field-comments/
+├── media/
+│   ├── Comments-0c2843ad-0293-4a5f-a6e6-d97581ad281a.csv
+│   ├── Comments-0cb021ad-a8a1-418c-b8be-55131ee89d45.csv
+│   └── Comments-0cdb217c-dab0-4de4-8fe9-2e71ac2dcb86.csv
+├── survey_data.dta
+├── use_data.dta
+└── sctocomments.ado</code></pre>
+
+  <p><strong>Run</strong>:</p>
+  <pre><code>sctocomments, path(".") caseid("uuid") survey("survey_data.dta") use("use_data.dta") stripgrp</code></pre>
+
+  <h2>📂 Output</h2>
+  <p>The resulting <code>comments.dta</code> includes:</p>
+  <ul>
+    <li><strong>caseid</strong> — Unique case ID from the survey dataset.</li>
+    <li><strong>keepvars</strong> — Variables from <code>keepvars()</code> (e.g., <code>fo_id</code>, <code>fc_id</code>).</li>
+    <li><strong>variable</strong> — Derived variable name from the last segment of the Field name.</li>
+    <li><strong>comment</strong> — Text from the comment CSV.</li>
+    <li><strong>label_val</strong> — Variable label if a match is found in the use dataset.</li>
+  </ul>
+
+  <h2>⚠️ Cautions and Limitations</h2>
+  <h3>Fieldname Segment Limit</h3>
+  <p>The program assumes the Field name can be split into up to <strong>9 segments</strong>. Increase loop limits in the ado file if needed.</p>
+
+  <h3>Repeat and Group Instances</h3>
+  <p>Repeat group indices (e.g., [8], [1]) are appended to the variable name. Use <code>stripgrp</code> to remove <code>grp_</code> prefixes.</p>
+
+  <h3>Missing Survey Variables</h3>
+  <p>If <code>caseid</code> or <code>keepvars</code> are missing from the survey dataset the program may warn or exit with an error.</p>
+
+  <h2>🛠️ Troubleshooting</h2>
+  <table>
+    <tr><th>Error</th><th>Cause &amp; Solution</th></tr>
+    <tr><td><code>variable already defined (r(110))</code></td><td>Occurs if <code>keepvars</code> already exist before generation. Use <code>capture gen</code> or clear dataset before re-running.</td></tr>
+    <tr><td>Incomplete extraction</td><td>Check the Field name structure and adjust loop limits or regex.</td></tr>
+    <tr><td>Missing data</td><td>Ensure the survey and use datasets contain the key variable (e.g., <code>uuid</code>).</td></tr>
+  </table>
+
+  <hr>
+
+  <p><em>Developed by: Aubrey Jolex</em></p>
+  <p><strong>License:</strong> MIT</p>
+
+</body>
+</html>
