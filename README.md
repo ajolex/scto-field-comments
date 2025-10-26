@@ -37,12 +37,12 @@ Then copy the file to the `PERSONAL` path, for example:
 
 ### 2. Install via GitHub (optional)
 ```bash
-git clone https://github.com/yourusername/sctocomments.git
+git clone https://github.com/yourusername/scto-field-comments.git
 ```
 
-Or directly from within Stata:
+Or directly from within Stata (point to the package folder so Stata can find `stata.toc`):
 ```stata
-net install sctocomments, from("https://raw.githubusercontent.com/yourusername/sctocomments/master/") replace
+net install sctocomments, from("https://raw.githubusercontent.com/ajolex/scto-field-comments/master/sctocomments/") replace
 ```
 
 ### 3. Verify Installation
