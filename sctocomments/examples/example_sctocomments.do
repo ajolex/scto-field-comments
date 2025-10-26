@@ -5,7 +5,7 @@ clear all
 set more off
 
 // change this to your path
-local mypath "C:/path/to/your/project"
+local mypath "Your\path\to\comments\media"
 
 // basic usage (looks for CSV files in media subfolder)
 sctocomments, path("`mypath'")

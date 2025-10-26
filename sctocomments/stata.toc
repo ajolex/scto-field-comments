@@ -1,2 +1,8 @@
-v 3
-p sctocomments Collate SurveyCTO comments CSV files into a single Stata dataset
+v 3.0
+d sctocomments: Collate SurveyCTO comments CSVs into a single Stata dataset
+d 
+d Distribution-Date: 20251027
+d 
+d sctocomments
+f sctocomments.ado
+f sctocomments.sthlp

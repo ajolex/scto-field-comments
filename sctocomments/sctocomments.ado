@@ -6,24 +6,31 @@ program define sctocomments, rclass
     sctocomments: Collate SurveyCTO comments CSVs (Comments-*.csv) into a single Stata dataset
 
     Syntax:
-        sctocomments, path(string) [mediafolder(string) filesub(string) out(string) survey(string) use(string)]
+        sctocomments, path(string) caseid(string) [mediafolder(string) filesub(string) out(string) survey(string) use(string) keepvars(string) stripgrp]
 
     Options:
-        path(string)     : base folder that contains the comments CSV folder (required)
-        mediafolder(string): name of subfolder containing CSV files (default: "media")
-        filesub(string)  : filename pattern for comment files (default: "Comments*.csv")
-        out(string)      : output filepath for the combined comments .dta (default: "comments.dta" inside path)
-        survey(string)   : full path to survey dataset to merge with (optional)
-        use(string)      : full path to main survey dataset for extracting variable values/labels
+        path(string)     : Base folder that contains the comments CSV folder (required)
+        caseid(string)   : Variable name for unique case ID in the survey dataset (required)
+        mediafolder(string): Name of subfolder containing CSV files (default: "media")
+        filesub(string)  : Filename pattern for comment files (default: "Comments*.csv")
+        out(string)      : Output filepath for the combined comments .dta (default: "comments.dta" inside path)
+        survey(string)   : Full path to survey dataset to merge with (required if caseid is to be populated)
+        use(string)      : Full path to main survey dataset for extracting variable values/labels
+        keepvars(string) : Space-separated list of additional variables to keep (e.g., "fo_id fc_id"), defaults to "fo_id fc_id" if not specified
+        stripgrp         : Option to remove "grp_" prefix from variable names (optional)
     */
 
-    syntax , PATH(string) [MEDIAFOLDER(string) FILESUB(string) OUT(string) SURVEY(string) USE(string)]
+    syntax , PATH(string) CASEID(string) [MEDIAFOLDER(string) FILESUB(string) OUT(string) SURVEY(string) USE(string) KEEPVARS(string) STRIPGRP]
 
     // Set defaults
     if "`filesub'" == "" local filesub "Comments*.csv"
     if "`out'" == "" local out "comments.dta"
     if "`mediafolder'" == "" local mediafolder "media"
-    
+    if "`keepvars'" == "" local keepvars "fo_id fc_id" // Default to fo_id and fc_id if not specified
+
+    // Split keepvars into a local macro list
+    local keepvars_list `keepvars'
+
     // Normalize path separators for portability
     local oslower = lower(c(os))
     local dirsep = cond(strpos("`oslower'", "windows"), "\", "/")
@@ -45,7 +52,6 @@ program define sctocomments, rclass
         local media "`mediafolder_clean'"
     }
     else {
-        // Check if path_clean already ends with mediafolder_clean
         if regexm("`path_clean'", "[/\\]`mediafolder_clean'$") {
             local media "`path_clean'"
         }
@@ -62,7 +68,7 @@ program define sctocomments, rclass
         exit 198
     }
 
-    // List files using dir command to match working do-file
+    // List files using dir command
     local current_dir "`c(pwd)'"
     cd "`media'"
     local filenames: dir . files "`filesub'"
@@ -71,8 +77,6 @@ program define sctocomments, rclass
         di as err "No files found matching `filesub' in `media'"
         exit 499
     }
-    
-    // Debug: Display each filename individually
     di as txt "Found files:"
     foreach f of local filenames {
         di as txt `"  "`f'"'
@@ -87,22 +91,20 @@ program define sctocomments, rclass
     local combined_initialized 0
     
     foreach f of local filenames {
-        // Strip quotes if present to handle quoted filenames
+        // Strip quotes if present
         local f_clean `f'
         if substr(`"`f'"', 1, 1) == `"""' & substr(`"`f'"', -1, 1) == `"""' {
             local f_clean = substr(`"`f'"', 2, strlen(`"`f'"') - 2)
         }
         
         di as txt "Processing `f_clean'..."
-        
-        // Import using compound quotes to match working do-file
         capture import delimited using `"`media'`dirsep'`f_clean'"', stripquotes(yes) bindquotes(strict) clear
         if _rc {
             di as err "  Failed to import `f_clean', skipping..."
             continue
         }
 
-        // Normalize column names to fieldname and comment
+        // Normalize column names
         capture confirm variable Field_name
         if !_rc rename Field_name fieldname
         capture confirm variable field_name
@@ -111,7 +113,7 @@ program define sctocomments, rclass
         if !_rc rename Comment comment
         capture confirm variable comment
 
-        // If import created v1/v2 columns, rename them
+        // Handle v1/v2 columns if present
         capture confirm variable v1
         if !_rc {
             capture confirm variable v2
@@ -121,29 +123,24 @@ program define sctocomments, rclass
             }
         }
 
-        // Ensure we have the expected vars
         capture confirm variable fieldname
         if _rc {
             di as txt "  File `f_clean' doesn't contain a fieldname column; skipping"
             continue
         }
         
-        // Ensure we have data
         if _N == 0 {
             di as txt "  File `f_clean' is empty; skipping"
             continue
         }
 
-        // Create file and id variables to match working do-file
         gen file = `"`f_clean'"'
         gen id = substr(file, 10, .)
         replace id = subinstr(id, ".csv", "", .)
 
-        // Drop any header-like rows
         capture drop if fieldname == "Field name"
         capture drop if comment == ""
 
-        // Append to combined dataset
         if `combined_initialized' {
             capture append using "`comments_combined'", force
             if _rc {
@@ -167,60 +164,92 @@ program define sctocomments, rclass
         exit 499
     }
 
-    // Load combined dataset
     use "`comments_combined'", clear
 
-    // Split fieldname by slash into parts
-    capture split fieldname, parse("/")
+    // Split fieldname by slash
+    capture split fieldname, p(/)
     if _rc {
         di as err "Failed to split fieldname variable"
     }
 
-    // Create variable name from last non-empty split component
+    // Derive variable from the last non-empty component
     gen variable = ""
-    forvalues i = 1/20 {
-        capture confirm variable fieldname`i'
-        if !_rc {
-            replace variable = fieldname`i' if fieldname`i' != "" & variable == ""
+    forvalues i = 1/8 {
+        forvalues k = 2/8 {
+            replace variable = fieldname`i' if fieldname`k' == "" & fieldname`i' != ""
         }
     }
+    replace variable = fieldname8 if fieldname8 != ""
 
-    // Extract repeat instance numbers
+    // Extract repeat instances for variables from a repeat group
     gen inst1 = ""
     gen inst2 = ""
-    forvalues i = 1/19 {
-        capture confirm variable fieldname`i'
-        if !_rc {
-            local p = `i' + 1
-            capture confirm variable fieldname`p'
-            if !_rc {
-                replace inst1 = regexs(1) if regexm(fieldname`i', "repeat_.+\\[(\\d+)\\]") & inst1 == ""
-                replace inst2 = regexs(1) if regexm(fieldname`p', "repeat_.+\\[(\\d+)\\]") & inst1 != ""
-            }
-        }
+    gen fieldname9 = ""
+    forvalues i = 1/7 {
+        local p = `i' + 1
+        replace inst1 = regexs(1) if regexm(fieldname`i', "repeat_.+\[(\d+)\]") & inst1 == ""
+        replace inst2 = regexs(1) if regexm(fieldname`p', "repeat_.+\[(\d+)\]") & inst1 != ""
     }
 
+    // Construct variable with repeat instances
     gen repeat_inst = ""
     replace repeat_inst = variable + "_" + inst1 + "_" + inst2 if (inst1 != "" & inst2 != "")
-    replace repeat_inst = variable + "_" + inst1 if inst2 == "" & inst1 != ""
+    replace repeat_inst = variable + "_" + inst1 if inst2 == "" & repeat_inst == "" & inst1 != ""
     replace repeat_inst = variable if repeat_inst == ""
-
     drop variable
     rename repeat_inst variable
 
+    // Apply stripgrp as the final step to ensure all grp_ prefixes are removed
+    if "`stripgrp'" != "" {
+        replace variable = subinstr(variable, "grp_", "", .)
+    }
+
     keep if comment != "" & variable != ""
 
-    // Create key to match working do-file
+    // Generate key
     gen key = "uuid:" + id
+    drop id
 
-    // Merge with survey data if provided
-    if "`survey'" != "" {
-        capture confirm file `"`survey'"'
-        if _rc == 0 {
-            merge m:1 key using `"`survey'"', keep(match) nogen
+    // Merge with survey dataset to populate caseid, fo_id, fc_id
+    if "`survey'" == "" {
+        di as err "survey option is required to populate caseid"
+        exit 198
+    }
+    capture confirm file `"`survey'"'
+    if _rc {
+        di as err "Survey file not found: `survey'"
+        exit 198
+    }
+    else {
+        preserve
+        use `"`survey'"', clear
+        capture confirm variable `caseid'
+        if _rc {
+            di as err "Variable `caseid' not found in survey dataset"
+            exit 198
         }
-        else {
-            di as err "Warning: survey file not found: `survey'"
+        // Check for keepvars in survey dataset, issue warning if absent
+        local keepvars_count : word count `keepvars_list'
+        forvalues i = 1/`keepvars_count' {
+            local var = word("`keepvars_list'", `i')
+            capture confirm variable `var'
+            if _rc {
+                di as warn "Variable `var' not found in survey dataset, will be empty"
+            }
+        }
+        restore
+        merge m:1 key using `"`survey'"', keep(match) nogen
+        // Always generate caseid and keepvars, populate if present
+        replace `caseid' = `caseid' if !missing(`caseid')
+        foreach var of local keepvars_list {
+            capture gen `var' = ""
+            if _rc {
+                replace `var' = "" if missing(`var')
+            }
+            capture confirm variable `var'
+            if !_rc {
+                replace `var' = `var' if !missing(`var')
+            }
         }
     }
 
@@ -236,30 +265,41 @@ program define sctocomments, rclass
             tempfile current_data
             save "`current_data'", replace
             use `"`use'"', clear
+            ds, has(type numeric)
+            local num_vars `r(varlist)' // List of all numeric vars
+            ds, has(type string)
+            local str_vars `r(varlist)' // List of all string vars
             merge 1:m key using "`current_data'", keep(match using) nogen
         }
         else {
             di as err "Warning: file specified in use() not found: `use'"
         }
     }
+    else {
+        // If no use() provided, use all variables from current dataset
+        ds, has(type numeric)
+        local num_vars `r(varlist)' // List of all numeric vars
+        ds, has(type string)
+        local str_vars `r(varlist)' // List of all string vars
+    }
 
-    ds, has(type numeric)
-    local numeric_vars `r(varlist)'
-    ds, has(type string)
-    local string_vars `r(varlist)'
-
-    forvalues i = 1/`=_N' {
+    // Loop through each observation to assign values and labels
+    forval i = 1/`=_N' {
         local varname = variable[`i']
-        foreach nv of local numeric_vars {
-            if "`nv'" == "`varname'" {
-                quietly replace `num_val' = `nv'[`i'] in `i'
-                quietly replace `label_val' = "`: var label `nv''" in `i'
+        // Check numeric variables
+        foreach num_var of local num_vars {
+            if "`varname'" == "`num_var'" {
+                quietly replace `num_val' = `num_var'[`i'] in `i'
+                quietly replace `label_val' = "`: var label `num_var''" in `i'
+                continue
             }
         }
-        foreach sv of local string_vars {
-            if "`sv'" == "`varname'" {
-                quietly replace `str_val' = `sv'[`i'] in `i'
-                quietly replace `label_val' = "`: var label `sv''" in `i'
+        // Check string variables
+        foreach str_var of local str_vars {
+            if "`varname'" == "`str_var'" {
+                quietly replace `str_val' = `str_var'[`i'] in `i'
+                quietly replace `label_val' = "`: var label `str_var''" in `i'
+                continue
             }
         }
     }
@@ -269,6 +309,10 @@ program define sctocomments, rclass
     drop `num_val'
     rename `str_val' value
     rename `label_val' label_val
+
+    // Keep only the specified variables
+    local keep_list `caseid' `keepvars_list' variable comment label_val
+    keep `keep_list'
 
     // Save output
     local outfile "`out'"

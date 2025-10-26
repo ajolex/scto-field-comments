@@ -5,7 +5,7 @@ sctocomments \- Collate SurveyCTO comments CSVs into a single Stata dataset
 .SP 1
 .SH SYNOPSIS
 .TP
-.B sctocomments, path(string) [filesub(string) out(string)]
+.B sctocomments, path(string) [mediafolder(string) filesub(string) out(string) survey(string) use(string)]
 .SH DESCRIPTION
 The \fBsctocomments\fR command imports SurveyCTO comments CSV exports (files named like \fBComments-<uuid>.csv\fR) found in the
 subfolder specified by \fBmediafolder()\fR under the folder provided in \fBpath()\fR. It collates them into a single Stata dataset and
