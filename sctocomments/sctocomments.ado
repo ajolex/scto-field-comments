@@ -34,21 +34,24 @@ program define sctocomments, rclass
     // build the CSV files directory
     local media = "`path'" + "/" + "`mediafolder'"
 
-    // check directory
-    capture cd "`media'"
+    // check directory exists
+    capture confirm dir "`media'"
     if _rc {
-        di as err "could not change to media directory: `media'"
+        di as err "directory not found: `media'"
         exit 198
     }
 
-    // list files
+    // list files using full path (avoid cd issues)
     local pattern "`filesub'"
-    local filenames: dir . files "`pattern'"
+    local filenames: dir "`media'" files "`pattern'"
     if "`filenames'" == "" {
         di as err "no files found matching `pattern' in `media'"
         exit 499
     }
 
+    // store current working directory
+    local original_dir = c(pwd)
+    
     tempfile comments_combined
     preserve
     clear
@@ -57,12 +60,19 @@ program define sctocomments, rclass
 
     foreach f of local filenames {
         di as txt "processing `f'..."
-
-        // import CSV using first line as variable names where possible
-        capture noisily import delimited using "`f'", varnames(1) stringcols(_all) clear
+        
+        // use full path for file import
+        local fullpath "`media'/`f'"
+        
+        // safer import with better error handling
+        capture import delimited using "`fullpath'", varnames(1) stringcols(_all) clear
         if _rc {
-            // fallback: import without varnames
-            capture noisily import delimited using "`f'", varnames(0) stringcols(_all) clear
+            di as txt "  trying alternative import method..."
+            capture import delimited using "`fullpath'", varnames(0) stringcols(_all) clear
+            if _rc {
+                di as err "  failed to import `f', skipping..."
+                continue
+            }
         }
 
         // normalize column names to `fieldname' and `comment'
@@ -87,7 +97,13 @@ program define sctocomments, rclass
         // ensure we have the expected vars
         capture confirm variable fieldname
         if _rc {
-            di as err "imported file `f' doesn't contain a fieldname column; skipping"
+            di as txt "  file `f' doesn't contain a fieldname column; skipping"
+            continue
+        }
+        
+        // ensure we have data
+        if _N == 0 {
+            di as txt "  file `f' is empty; skipping"
             continue
         }
 
@@ -103,16 +119,38 @@ program define sctocomments, rclass
         capture drop if fieldname=="Field name"
         capture drop if comment==""
 
-        // append to combined tempfile
-        append using `comments_combined', force
-        save `comments_combined', replace
+        // safely append to combined tempfile
+        capture append using `comments_combined', force
+        if _rc {
+            di as err "  failed to append `f' to combined dataset"
+            continue
+        }
+        
+        capture save `comments_combined', replace
+        if _rc {
+            di as err "  failed to save combined dataset after `f'"
+            exit 198
+        }
     }
 
-    // load combined
-    use `comments_combined', clear
+    // load combined dataset
+    capture use `comments_combined', clear
+    if _rc {
+        di as err "failed to load combined comments dataset"
+        exit 198
+    }
+    
+    // check if we have any data
+    if _N == 0 {
+        di as err "no comments data found in any CSV files"
+        exit 499
+    }
 
     // split fieldname by slash into parts
-    capture noisily split fieldname, parse("/")
+    capture split fieldname, parse("/")
+    if _rc {
+        di as err "failed to split fieldname variable"
+    }
 
     // create variable name candidate: pick the last non-empty split component
     gen variable = ""
@@ -211,8 +249,16 @@ program define sctocomments, rclass
 
     // save output
     local outfile = "`path'/`out'"
-    save `"`outfile'"', replace
+    capture save `"`outfile'"', replace
+    if _rc {
+        di as err "failed to save output file: `outfile'"
+        exit 198
+    }
 
     di as txt "saved combined comments to `outfile'"
+    di as txt "dataset contains `=_N' comment observations"
+    
+    // restore original directory if changed
+    quietly cd "`original_dir'"
 
 end
