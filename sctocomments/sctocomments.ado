@@ -27,12 +27,16 @@ program define sctocomments, rclass
         OUT(string) SURVEY(string) USE(string)]
 
     // set defaults
-    if "`mediafolder'" == "" local mediafolder "media"
     if "`filesub'" == "" local filesub "Comments*.csv"
     if "`out'" == "" local out "comments.dta"
     
     // build the CSV files directory
-    local media = "`path'" + "/" + "`mediafolder'"
+    if "`mediafolder'" == "" {
+        local media "`path'"
+    }
+    else {
+        local media = "`path'" + "/" + "`mediafolder'"
+    }
 
     // check directory exists
     capture confirm dir "`media'"
