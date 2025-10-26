@@ -84,8 +84,9 @@ sctocomments, path("C:\Users\AJolex\Documents\scto-field-comments") ///
     caseid("unique_id") keepvars("enum_id coord_id") ///
     survey("survey_data.dta") use("use_data.dta") stripgrp
 ```
-→ Uses `unique_id` as the case ID, keeps `enum_id` and `coord_id`, merges with `use_data.dta` for variable labels, strips `grp_` prefixes, and saves the output.
----
+
+Uses `unique_id` as the case ID, keeps `enum_id` and `coord_id`, merges with `use_data.dta` for variable labels, strips `grp_` prefixes, and saves the output
+
 
 ## ⚡ Quick Start Example
 
