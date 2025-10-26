@@ -1,0 +1,13 @@
+v 3
+d sctocomments: Collate SurveyCTO comments CSV files into a single Stata dataset
+d
+d Author: Aubrey Jolex
+d Support: email your-email@domain.com
+d
+d Distribution-Date: 20251026
+d License: MIT
+d
+f sctocomments.ado
+f sctocomments.sthlp
+f README.md
+f examples/example_sctocomments.do

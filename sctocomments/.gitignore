@@ -1,0 +1,15 @@
+# Ignore CSV comment files
+Comments-*.csv
+
+# Ignore original do file
+field_comments.do
+
+# Ignore temporary files
+*.tmp
+~*.stswp
+
+# Ignore log files
+*.log
+
+# Ignore Stata temporary files
+*.dta.bak
