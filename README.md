@@ -1,3 +1,4 @@
+````markdown
 # 📊 sctocomments: SurveyCTO Comments Collation Tool
 
 **`sctocomments.ado`** is a Stata utility for collating and organizing **SurveyCTO comment CSV files** (e.g., `Comments-*.csv`) into a single Stata dataset.  
@@ -184,3 +185,5 @@ Filter variables if needed to improve speed.
 **License:** MIT  
 **Compatible with:** Stata 15+  
 **Repository:** [github.com/ajolex/scto-field-comments](https://github.com/ajolex/scto-field-comments)
+
+````
