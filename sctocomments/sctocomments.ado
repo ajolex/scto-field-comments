@@ -23,9 +23,14 @@ program define sctocomments, rclass
       - Provide `path()` to point to your project folder and `mediafolder()` for the subfolder name.
     */
 
-    syntax , PATH(string) [MEDIAFOLDER(string "media") FILESUB(string "Comments*.csv") ///
-        OUT(string "comments.dta") SURVEY(string) USE(string)]
+    syntax , PATH(string) [MEDIAFOLDER(string) FILESUB(string) ///
+        OUT(string) SURVEY(string) USE(string)]
 
+    // set defaults
+    if "`mediafolder'" == "" local mediafolder "media"
+    if "`filesub'" == "" local filesub "Comments*.csv"
+    if "`out'" == "" local out "comments.dta"
+    
     // build the CSV files directory
     local media = "`path'" + "/" + "`mediafolder'"
 
