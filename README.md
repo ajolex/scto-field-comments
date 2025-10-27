@@ -167,7 +167,7 @@ Filter variables if needed to improve speed.
 |------------------------------------------|---------------------------------------------------------------------------------|
 | **variable already defined (r(110))**    | Occurs if a variable in `keepvars` already exists before generation. Use `capture gen` or clear the dataset before re-running. |
 | **Incomplete extraction**                | Check the `Field name` format and adjust loop limits or regex as needed.         |
-| **Missing data**                         | Ensure the survey and use datasets contain the key variable (e.g., `uuid:<id>`). |
+| **Missing data**                         | Ensure the survey and use datasets contain the key variable (e.g., `caseid`; `hhid`; `id`). |
 
 **Developed by:** *Aubrey Jolex*
 **License:** MIT
