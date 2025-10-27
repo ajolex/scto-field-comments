@@ -9,10 +9,10 @@
 The `sctocomments` command:
 
 - Collects and combines all SurveyCTO comment CSV files (typically stored in a `media` subfolder).
-- Extracts variable names from the **last non-empty segment** of each field path.
+- Extracts variable names from the **last non-empty segment** of each `Field Name` value of the `csv` file.
 - Handles **repeat group instances** and **nested field structures** automatically.
-- Optionally removes `grp_` prefixes from variable names.
-- Merges with a survey dataset to include **key IDs, variable values, and labels**.
+- Optionally removes `grp_` prefixes from group variable names.
+- Merges with a survey dataset to include **Unique IDs, survey variable values attached to the comment, and labels**.
 
 The output is a clean `.dta` file containing all comments and relevant metadata.
 
@@ -139,8 +139,8 @@ The resulting `comments.dta` includes:
 ## ⚠️ Cautions and Limitations
 
 ### Fieldname Segment Limit
-The program assumes the `Field name` can be split into up to **9 segments**.
-If your data has deeper nesting, increase loop limits in the ado file (e.g., `1/8` → `1/10`).
+The program assumes the `Field name` of the `csv` file e.g. `(grp_available_resp[1]/grp_consented[1]/grp_fd_cons[1]/repeat_fd_cat[1]/repeat_fd_cons[1]/fd_cons_2b_v1)` can be split into up to **9 segments**.
+If your data has deeper nesting, increase loop limits in the ado file (e.g., `1/8` → `1/10`) and save the ado file.
 
 ### Repeat and Group Instances
 Repeat group indices (e.g., `[8]`, `[1]`) are appended to the variable name.
@@ -148,7 +148,7 @@ If your naming convention differs, modify the regex accordingly.
 `grp_` prefixes can be removed with the `stripgrp` option.
 
 ### Variable Name Derivation
-Variables are derived from the last non-empty segment of the field path.
+Variables are derived from the last non-empty segment of the `Field name` value.
 If the structure varies or uses different delimiters, check your CSV’s `Field name` format.
 
 ### Missing Survey Variables
@@ -163,16 +163,14 @@ Filter variables if needed to improve speed.
 
 ## 🛠️ Troubleshooting
 
-| Error | Cause & Solution |
-| **variable already defined (r(110))** | Occurs if a variable in `keepvars` already exists before generation. Use `capture gen` or clear the dataset before re-running. |
-| **Incomplete extraction** | Check the `Field name` format and adjust loop limits or regex as needed. |
-| **Missing data** | Ensure the survey and use datasets contain the key variable (`uuid:<id>`). |        
-
----
+| Error                                    | Cause & Solution                                                                 |
+|------------------------------------------|---------------------------------------------------------------------------------|
+| **variable already defined (r(110))**    | Occurs if a variable in `keepvars` already exists before generation. Use `capture gen` or clear the dataset before re-running. |
+| **Incomplete extraction**                | Check the `Field name` format and adjust loop limits or regex as needed.         |
+| **Missing data**                         | Ensure the survey and use datasets contain the key variable (e.g., `uuid:<id>`). |
 
 **Developed by:** *Aubrey Jolex*
 **License:** MIT
 **Compatible with:** Stata 15+
-**Repository:** [github.com/ajolex/scto-field-comments](https://github.com/ajolex/scto-field-comments)   
-
+**Repository:** [github.com/ajolex/scto-field-comments](https://github.com/ajolex/scto-field-comments)
 ```markdown
