@@ -16,7 +16,7 @@ program define sctocomments, rclass
         out(string)      : Output filepath for the combined comments .dta (default: "comments.dta" inside path)
         survey(string)   : Full path to survey dataset to merge with (required if caseid is to be populated)
         use(string)      : Full path to main survey dataset for extracting variable values/labels
-        keepvars(string) : Space-separated list of additional variables to keep (e.g., "fo_id fc_id"), defaults to "fo_id fc_id" if not specified
+        keepvars(string) : Space-separated list of additional variables to keep (e.g., "fo_id"), defaults to "fo_id" if not specified
         stripgrp         : Option to remove "grp_" prefix from variable names (optional)
     */
 
@@ -26,7 +26,7 @@ program define sctocomments, rclass
     if "`filesub'" == "" local filesub "Comments*.csv"
     if "`out'" == "" local out "comments.dta"
     if "`mediafolder'" == "" local mediafolder "media"
-    if "`keepvars'" == "" local keepvars "fo_id fc_id" // Default to fo_id and fc_id if not specified
+    if "`keepvars'" == "" local keepvars "fo_id" // Default to fo_id 
 
     // Split keepvars into a local macro list
     local keepvars_list `keepvars'
@@ -210,7 +210,7 @@ program define sctocomments, rclass
     gen key = "uuid:" + id
     drop id
 
-    // Merge with survey dataset to populate caseid, fo_id, fc_id
+    // Merge with survey dataset to populate caseid, fo_id
     if "`survey'" == "" {
         di as err "survey option is required to populate caseid"
         exit 198
@@ -311,7 +311,7 @@ program define sctocomments, rclass
     rename `label_val' label_val
 
     // Keep only the specified variables
-    local keep_list `caseid' `keepvars_list' variable comment label_val
+    local keep_list `caseid' `keepvars_list' variable comment value label_val
     keep `keep_list'
 
     // Save output
