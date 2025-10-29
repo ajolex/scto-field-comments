@@ -123,6 +123,9 @@ program define sctocomments, rclass
             }
         }
 
+        // Normalize comment to string to avoid type mismatches during append
+        tostring comment, replace
+
         capture confirm variable fieldname
         if _rc {
             di as txt "  File `f_clean' doesn't contain a fieldname column; skipping"
@@ -142,7 +145,7 @@ program define sctocomments, rclass
         capture drop if comment == ""
 
         if `combined_initialized' {
-            capture append using "`comments_combined'", force
+            capture append using "`comments_combined'"
             if _rc {
                 di as err "  Failed to append `f_clean' to combined dataset"
                 continue
@@ -166,32 +169,53 @@ program define sctocomments, rclass
 
     use "`comments_combined'", clear
 
-    // Split fieldname by slash
+    // Save raw comments data before merging with survey
+    // This saves the unprocessed comments data to comments_raw.dta for record-keeping and debugging
+    local rawfile "comments_raw.dta"
+    local rawpath "`path_clean'`dirsep'`rawfile'"
+    if "`dirsep'" == "\" {
+        local rawpath = subinstr("`rawpath'", "/", "\", .)
+    }
+    capture save "`rawpath'", replace
+    if _rc {
+        di as err "Failed to save raw comments file: `rawpath'"
+        exit 198
+    }
+
+    // Split fieldname by slash to extract hierarchy (e.g., group/repeat/field)
     capture split fieldname, p(/)
     if _rc {
         di as err "Failed to split fieldname variable"
     }
 
     // Derive variable from the last non-empty component
+    // This loop checks up to 20 possible split segments, but works if fewer exist
+    // It finds the last non-empty fieldname component, which is usually the variable name
     gen variable = ""
-    forvalues i = 1/9 {
-        forvalues k = 2/9 {
-            cap replace variable = fieldname`i' if fieldname`k' == "" & fieldname`i' != ""
+    forvalues i = 1/20 {
+        forvalues k = 1/20 {
+            if `i' != `k' {
+                cap replace variable = fieldname`i' if fieldname`k' == "" & fieldname`i' != ""
+            }
         }
     }
-    cap replace variable = fieldname9 if fieldname9 != ""
+    cap replace variable = fieldname20 if fieldname20 != ""
 
     // Extract repeat instances for variables from a repeat group
+    // This looks for repeat group patterns in the split fieldname components
     gen inst1 = ""
     gen inst2 = ""
-    cap gen fieldname10 = ""
-    forvalues i = 1/8 {
+    cap gen fieldname21 = ""
+    forvalues i = 1/19 {
         local p = `i' + 1
+        // inst1: first repeat instance found
         cap replace inst1 = regexs(1) if regexm(fieldname`i', "repeat_.+\[(\d+)\]") & inst1 == ""
+        // inst2: second repeat instance if present
         cap replace inst2 = regexs(1) if regexm(fieldname`p', "repeat_.+\[(\d+)\]") & inst1 != ""
     }
 
     // Construct variable with repeat instances
+    // If both inst1 and inst2 are found, append both; else just inst1; else just variable
     gen repeat_inst = ""
     replace repeat_inst = variable + "_" + inst1 + "_" + inst2 if (inst1 != "" & inst2 != "")
     replace repeat_inst = variable + "_" + inst1 if inst2 == "" & repeat_inst == "" & inst1 != ""
@@ -205,6 +229,7 @@ program define sctocomments, rclass
     }
 
     keep if comment != "" & variable != ""
+    // keep if comment != ""
 
     // Generate key
     gen key = "uuid:" + id
