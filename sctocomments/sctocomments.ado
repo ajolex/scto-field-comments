@@ -174,21 +174,21 @@ program define sctocomments, rclass
 
     // Derive variable from the last non-empty component
     gen variable = ""
-    forvalues i = 1/8 {
-        forvalues k = 2/8 {
-            replace variable = fieldname`i' if fieldname`k' == "" & fieldname`i' != ""
+    forvalues i = 1/9 {
+        forvalues k = 2/9 {
+            cap replace variable = fieldname`i' if fieldname`k' == "" & fieldname`i' != ""
         }
     }
-    replace variable = fieldname8 if fieldname8 != ""
+    cap replace variable = fieldname9 if fieldname9 != ""
 
     // Extract repeat instances for variables from a repeat group
     gen inst1 = ""
     gen inst2 = ""
-    gen fieldname9 = ""
-    forvalues i = 1/7 {
+    cap gen fieldname10 = ""
+    forvalues i = 1/8 {
         local p = `i' + 1
-        replace inst1 = regexs(1) if regexm(fieldname`i', "repeat_.+\[(\d+)\]") & inst1 == ""
-        replace inst2 = regexs(1) if regexm(fieldname`p', "repeat_.+\[(\d+)\]") & inst1 != ""
+        cap replace inst1 = regexs(1) if regexm(fieldname`i', "repeat_.+\[(\d+)\]") & inst1 == ""
+        cap replace inst2 = regexs(1) if regexm(fieldname`p', "repeat_.+\[(\d+)\]") & inst1 != ""
     }
 
     // Construct variable with repeat instances
