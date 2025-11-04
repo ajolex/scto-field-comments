@@ -124,7 +124,7 @@ program define sctocomments, rclass
         }
 
         // Normalize comment to string to avoid type mismatches during append
-        tostring comment, replace
+        tostring comment, replace force
 
         capture confirm variable fieldname
         if _rc {
@@ -263,7 +263,7 @@ program define sctocomments, rclass
             }
         }
         restore
-        merge m:1 key using `"`survey'"', keep(match) nogen
+        merge m:1 key using `"`survey'"', keep(master match) nogen
         // Always generate caseid and keepvars, populate if present
         replace `caseid' = `caseid' if !missing(`caseid')
         foreach var of local keepvars_list {
