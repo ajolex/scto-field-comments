@@ -1,71 +1,131 @@
-.SS sctocomments
-.SP 1
-.SH NAME
-sctocomments \- Collate SurveyCTO comments CSVs into a single Stata dataset
-.SP 1
-.SH SYNOPSIS
-.TP
-.B sctocomments, path(string) caseid(string) [mediafolder(string) filesub(string) out(string) survey(string) use(string) keepvars(string) stripgrp]
-.SH DESCRIPTION
-The \fBsctocomments\fR command imports SurveyCTO comments CSV exports (files named like \fBComments-<uuid>.csv\fR) found in the
-subfolder specified by \fBmediafolder()\fR under the folder provided in \fBpath()\fR. It collates them into a single Stata dataset,
-optionally merges with a survey dataset, and extracts variable names, values, and labels from a provided `use` dataset.
+{smcl}
+{* *! version 2.0  12dec2025}{...}
+{vieweralsosee "[D] import delimited" "help import delimited"}{...}
+{vieweralsosee "[D] merge" "help merge"}{...}
+{viewerjumpto "Syntax" "sctocomments##syntax"}{...}
+{viewerjumpto "Description" "sctocomments##description"}{...}
+{viewerjumpto "Options" "sctocomments##options"}{...}
+{viewerjumpto "Examples" "sctocomments##examples"}{...}
+{viewerjumpto "Stored results" "sctocomments##results"}{...}
+{viewerjumpto "Author" "sctocomments##author"}{...}
+{title:Title}
 
-.SH OPTIONS
-.TP
-.B path(string)
-Base project folder that contains the CSV files subfolder. Required.
-.TP
-.B caseid(string)
-Variable name for the unique case identifier used to merge comments with your survey dataset. Required.
-.TP
-.B mediafolder(string)
-Name of subfolder containing comment CSV files. Default: \fBmedia\fR.
-.TP
-.B filesub(string)
-Filename pattern for the comment CSVs. Default: \fBComments*.csv\fR.
-.TP
-.B out(string)
-Output filename to save (within \fBpath()\fR). Default: \fBcomments.dta\fR.
-.TP
-.B survey(string)
-Full path to survey dataset to merge with. Optional.
-.TP
-.B use(string)
-Full path to main survey dataset for extracting variable values/labels. Optional.
-.TP
-.B keepvars(string)
-Space-separated list of additional variables to keep from the survey dataset (e.g., \fBfo_id fc_id\fR). Optional.
-.TP
-.B stripgrp
-Option (flag) to remove the prefix \fBgrp_\fR from derived variable names.
+{phang}
+{bf:sctocomments} {hline 2} Collate SurveyCTO comments CSVs into a single Stata dataset
 
-.SH DETAILS
-The command extracts variable names from the last non-empty segment of the `Field name` path present in SurveyCTO exports. It
-handles repeat group indices (appending them to variable names) and extracts values/labels when a `use()` dataset is supplied. If
-`caseid()` or required keep-variables are missing in the provided `survey()` dataset, warnings or errors are raised.
 
-.SH EXAMPLES
-.TP
-.B Basic usage
-.PP
-.B sctocomments, path("C:\\Users\\AJolex\\Documents\\scto-field-comments") ///
-	caseid("caseid") survey("survey_data.dta")
-.PP
-Processes all \fBComments*.csv\fR files in the `media` subfolder, merges by `caseid`, and saves as `comments.dta`.
+{marker syntax}{...}
+{title:Syntax}
 
-.TP
-.B With custom variables and stripgrp
-.PP
-.B sctocomments, path("C:\\Users\\AJolex\\Documents\\scto-field-comments") ///
-	caseid("unique_id") keepvars("enum_id coord_id") ///
-	survey("survey_data.dta") use("use_data.dta") stripgrp
-.PP
-Keeps `enum_id` and `coord_id`, uses `use_data.dta` for variable labels, strips `grp_` prefixes, and saves the output.
+{p 8 17 2}
+{cmdab:sctocomments}
+{cmd:,} {opt path(string)}
+[{opt mediafolder(string)}
+{opt filesub(string)}
+{opt out(string)}
+{opt survey(string)}
+{opt use(string)}
+{opt keepvars(string)}
+{opt stripgrp}
+{opt nosave}]
 
-.SH AUTHOR
+
+{marker description}{...}
+{title:Description}
+
+{pstd}
+{cmd:sctocomments} imports SurveyCTO comments CSV exports (files named like 
+{it:Comments-<uuid>.csv}) found in the subfolder specified by {opt mediafolder()} 
+under the folder provided in {opt path()}. It collates them into a single Stata 
+dataset, optionally merges with a survey dataset to bring in case IDs, variable 
+values, and labels.
+
+{pstd}
+The command extracts variable names from the last non-empty segment of the 
+{it:Field name} path present in SurveyCTO exports. It handles repeat group indices 
+(appending them to variable names) and extracts values/labels when a {opt survey()} 
+dataset is supplied.
+
+
+{marker options}{...}
+{title:Options}
+
+{phang}
+{opt path(string)} specifies the base project folder that contains the CSV files 
+subfolder. This is required.
+
+{phang}
+{opt mediafolder(string)} specifies the name of the subfolder containing comment 
+CSV files. Default is {bf:media}. Can be a relative path or absolute path.
+
+{phang}
+{opt filesub(string)} specifies the filename pattern for the comment CSVs. 
+Default is {bf:Comments*.csv}.
+
+{phang}
+{opt out(string)} specifies the output filename to save (within {opt path()}). 
+Default is {bf:comments.dta}. Absolute paths are honored as-is.
+
+{phang}
+{opt survey(string)} specifies the full path to the survey dataset to merge with. 
+Must contain a {bf:key} variable. The command auto-detects common case ID variables 
+(caseid, hhid, instanceid, submissionid) and extracts variable values and labels. 
+Optional.
+
+{phang}
+{opt use(string)} is an alias for {opt survey()}. Provided for backward compatibility.
+
+{phang}
+{opt keepvars(string)} specifies a space-separated list of additional variables 
+to keep from the survey dataset (e.g., {bf:fo_id enum_name}). Optional.
+
+{phang}
+{opt stripgrp} is an option flag to remove the prefix {bf:grp_} from derived 
+variable names.
+
+{phang}
+{opt nosave} loads the combined dataset in memory without saving to disk. 
+Useful for inspection or piping to other commands.
+
+
+{marker examples}{...}
+{title:Examples}
+
+{pstd}Basic usage (no survey merge):{p_end}
+{phang2}{cmd:. sctocomments, path("C:/Users/you/project")}{p_end}
+{pstd}Processes all {it:Comments*.csv} files in the {it:media} subfolder and saves as {it:comments.dta}.
+
+{pstd}With survey merge:{p_end}
+{phang2}{cmd:. sctocomments, path("C:/Users/you/project") survey("survey_data.dta")}{p_end}
+{pstd}Processes comments and merges with survey data, auto-detecting case ID and extracting variable values/labels.
+
+{pstd}With custom variables and options:{p_end}
+{phang2}{cmd:. sctocomments, path("C:/Users/you/project") survey("survey_data.dta") keepvars("fo_id enum_name") stripgrp}{p_end}
+{pstd}Keeps {it:fo_id} and {it:enum_name} from survey, strips {it:grp_} prefixes from variable names.
+
+{pstd}Load in memory without saving:{p_end}
+{phang2}{cmd:. sctocomments, path("C:/Users/you/project") nosave}{p_end}
+{pstd}Processes comments and loads in memory for inspection without saving to disk.
+
+
+{marker results}{...}
+{title:Output Files}
+
+{pstd}
+The command creates two files in the {opt path()} directory:
+
+{phang2}{bf:comments_raw.dta} - Raw comments before processing (for debugging){p_end}
+{phang2}{bf:comments.dta} - Final processed comments (or custom name via {opt out()}){p_end}
+
+
+{marker author}{...}
+{title:Author}
+
+{pstd}
 Developed by Aubrey Jolex.
 
-.SH BUGS
-If the `use()` dataset does not contain matching variables or if variable names are non-standard, label/value extraction may be incomplete.
-Adjust the ado file loop limits or regex patterns when your `Field name` paths have more segments or different conventions.
+{pstd}
+Version 2.0 (December 2025) - Simplified syntax, auto-detection of case IDs, performance optimizations.
+
+{pstd}
+For issues or contributions, visit: {browse "https://github.com/ajolex/scto-field-comments"}

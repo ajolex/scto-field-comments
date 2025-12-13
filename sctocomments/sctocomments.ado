@@ -6,356 +6,321 @@ program define sctocomments, rclass
     sctocomments: Collate SurveyCTO comments CSVs (Comments-*.csv) into a single Stata dataset
 
     Syntax:
-        sctocomments, path(string) caseid(string) [mediafolder(string) filesub(string) out(string) survey(string) use(string) keepvars(string) stripgrp]
+        sctocomments, path(string) [mediafolder(string) filesub(string) out(string) survey(string) use(string) keepvars(string) stripgrp nosave]
 
     Options:
         path(string)     : Base folder that contains the comments CSV folder (required)
-        caseid(string)   : Variable name for unique case ID in the survey dataset (required)
         mediafolder(string): Name of subfolder containing CSV files (default: "media")
         filesub(string)  : Filename pattern for comment files (default: "Comments*.csv")
         out(string)      : Output filepath for the combined comments .dta (default: "comments.dta" inside path)
-        survey(string)   : Full path to survey dataset to merge with (required if caseid is to be populated)
-        use(string)      : Full path to main survey dataset for extracting variable values/labels
-        keepvars(string) : Space-separated list of additional variables to keep (e.g., "fo_id"), defaults to "fo_id" if not specified
+        survey(string)   : Full path to survey dataset to merge with (optional, for adding caseid)
+        use(string)      : Full path to dataset for extracting variable values/labels (optional, defaults to survey if not specified)
+        keepvars(string) : Space-separated list of additional variables to keep from survey (default: "")
         stripgrp         : Option to remove "grp_" prefix from variable names (optional)
+        nosave           : Do not save output file, only load in memory (optional)
     */
 
-    syntax , PATH(string) CASEID(string) [MEDIAFOLDER(string) FILESUB(string) OUT(string) SURVEY(string) USE(string) KEEPVARS(string) STRIPGRP]
+    syntax , PATH(string) [MEDIAFOLDER(string) FILESUB(string) OUT(string) SURVEY(string) USE(string) KEEPVARS(string) STRIPGRP NOSAVE]
 
     // Set defaults
     if "`filesub'" == "" local filesub "Comments*.csv"
     if "`out'" == "" local out "comments.dta"
     if "`mediafolder'" == "" local mediafolder "media"
-    if "`keepvars'" == "" local keepvars "fo_id" // Default to fo_id 
-
-    // Split keepvars into a local macro list
-    local keepvars_list `keepvars'
+    
+    // use() and survey() are aliases - use whichever is provided (survey takes precedence)
+    if "`survey'" == "" & "`use'" != "" {
+        local survey "`use'"
+    }
 
     // Normalize path separators for portability
-    local oslower = lower(c(os))
-    local dirsep = cond(strpos("`oslower'", "windows"), "\", "/")
-    local path_clean = subinstr("`path'", "/", "`dirsep'", .)
-    local path_clean = subinstr("`path_clean'", "\", "`dirsep'", .)
-    local mediafolder_clean = subinstr("`mediafolder'", "/", "`dirsep'", .)
-    local mediafolder_clean = subinstr("`mediafolder_clean'", "\", "`dirsep'", .)
+    local dirsep = cond("`c(os)'" == "Windows", "\", "/")
+    local path_clean = subinstr(subinstr("`path'", "/", "`dirsep'", .), "\", "`dirsep'", .)
+    local mediafolder_clean = subinstr(subinstr("`mediafolder'", "/", "`dirsep'", .), "\", "`dirsep'", .)
 
-    // Trim trailing separators from base path (keep drive roots intact)
-    while substr("`path_clean'", -1, 1) == "`dirsep'" & strlen("`path_clean'") > 1 {
+    // Trim trailing separators from base path
+    while substr("`path_clean'", -1, 1) == "`dirsep'" & strlen("`path_clean'") > 3 {
         local path_clean = substr("`path_clean'", 1, strlen("`path_clean'") - 1)
     }
 
-    // Handle mediafolder (avoid appending if path already ends with mediafolder)
-    if "`mediafolder_clean'" == "" {
-        local media "`path_clean'"
-    }
-    else if regexm("`mediafolder_clean'", "^[A-Za-z]:") | substr("`mediafolder_clean'", 1, 1) == "`dirsep'" {
+    // Construct media folder path
+    if regexm("`mediafolder_clean'", "^[A-Za-z]:") | substr("`mediafolder_clean'", 1, 1) == "`dirsep'" {
         local media "`mediafolder_clean'"
     }
     else {
-        if regexm("`path_clean'", "[/\\]`mediafolder_clean'$") {
-            local media "`path_clean'"
-        }
-        else {
-            local media "`path_clean'`dirsep'`mediafolder_clean'"
-        }
+        local media "`path_clean'`dirsep'`mediafolder_clean'"
     }
 
     // Check if directory exists
-    di as txt "Checking directory: `media'"
-    mata: st_local("dir_exists_flag", strofreal(direxists("`media'")))
-    if "`dir_exists_flag'" != "1" {
+    capture confirm file "`media'`dirsep'."
+    if _rc {
         di as err "Directory not found: `media'"
-        exit 198
+        exit 601
     }
 
-    // List files using dir command
+    // List comment CSV files
     local current_dir "`c(pwd)'"
-    cd "`media'"
+    quietly cd "`media'"
     local filenames: dir . files "`filesub'"
-    cd "`current_dir'"
+    quietly cd "`current_dir'"
+    
     if `"`filenames'"' == "" {
-        di as err "No files found matching `filesub' in `media'"
-        exit 499
+        di as err "No files matching `filesub' found in `media'"
+        exit 601
     }
-    di as txt "Found files:"
-    foreach f of local filenames {
-        di as txt `"  "`f'"'
-    }
+    
+    di as txt "{txt}Found " as res word count `"`filenames'"' as txt " comment file(s) in: {res}`media'"
 
     // Initialize combined dataset tempfile
     tempfile comments_combined
-    preserve
-    clear
-    save "`comments_combined'", emptyok
-    restore
     local combined_initialized 0
     
     foreach f of local filenames {
         // Strip quotes if present
-        local f_clean `f'
-        if substr(`"`f'"', 1, 1) == `"""' & substr(`"`f'"', -1, 1) == `"""' {
-            local f_clean = substr(`"`f'"', 2, strlen(`"`f'"') - 2)
-        }
+        local f_clean = subinstr(`"`f'"', `"""', "", .)
         
-        di as txt "Processing `f_clean'..."
-        capture import delimited using `"`media'`dirsep'`f_clean'"', stripquotes(yes) bindquotes(strict) clear
-        if _rc {
-            di as err "  Failed to import `f_clean', skipping..."
-            continue
-        }
-
-        // Normalize column names
-        capture confirm variable Field_name
-        if !_rc rename Field_name fieldname
-        capture confirm variable field_name
-        if !_rc rename field_name fieldname
-        capture confirm variable Comment
-        if !_rc rename Comment comment
-        capture confirm variable comment
-
-        // Handle v1/v2 columns if present
-        capture confirm variable v1
-        if !_rc {
-            capture confirm variable v2
-            if !_rc {
-                rename v1 fieldname
-                rename v2 comment
-            }
-        }
-
-        // Normalize comment to string to avoid type mismatches during append
-        tostring comment, replace
-
-        capture confirm variable fieldname
-        if _rc {
-            di as txt "  File `f_clean' doesn't contain a fieldname column; skipping"
-            continue
-        }
-        
-        if _N == 0 {
-            di as txt "  File `f_clean' is empty; skipping"
-            continue
-        }
-
-        gen file = `"`f_clean'"'
-        gen id = substr(file, 10, .)
-        replace id = subinstr(id, ".csv", "", .)
-
-        capture drop if fieldname == "Field name"
-        capture drop if comment == ""
-
-        if `combined_initialized' {
-            capture append using "`comments_combined'"
+        quietly {
+            capture import delimited using `"`media'`dirsep'`f_clean'"', ///
+                stripquotes(yes) bindquotes(strict) clear
             if _rc {
-                di as err "  Failed to append `f_clean' to combined dataset"
+                noisily di as txt "  {txt}Skipping {res}`f_clean' {txt}(import failed)"
                 continue
             }
-        }
-        else {
-            local combined_initialized 1
-        }
 
-        capture save "`comments_combined'", replace
-        if _rc {
-            di as err "  Failed to save combined dataset after `f_clean'"
-            exit 198
+            // Normalize column names (handle various SurveyCTO export formats)
+            capture confirm variable Field_name
+            if !_rc rename Field_name fieldname
+            capture confirm variable field_name
+            if !_rc rename field_name fieldname
+            capture confirm variable Comment
+            if !_rc rename Comment comment
+            
+            // Handle v1/v2 columns (old format)
+            capture confirm variable v1
+            if !_rc {
+                capture confirm variable v2
+                if !_rc {
+                    rename v1 fieldname
+                    rename v2 comment
+                }
+            }
+
+            // Verify required columns exist
+            capture confirm variable fieldname comment
+            if _rc {
+                noisily di as txt "  {txt}Skipping {res}`f_clean' {txt}(missing fieldname or comment column)"
+                continue
+            }
+            
+            // Normalize comment to string to avoid type mismatches during append
+            capture confirm string variable comment
+            if _rc tostring comment, replace
+            
+            // Skip if no data
+            if _N == 0 {
+                noisily di as txt "  {txt}Skipping {res}`f_clean' {txt}(empty)"
+                continue
+            }
+
+            // Generate metadata columns
+            gen str file = `"`f_clean'"'
+            gen str uuid = substr(file, 10, .)
+            replace uuid = subinstr(uuid, ".csv", "", .)
+
+            // Drop header rows and empty comments
+            drop if inlist(fieldname, "Field name", "")
+            drop if comment == ""
+            
+            if _N == 0 {
+                noisily di as txt "  {txt}Skipping {res}`f_clean' {txt}(no valid comments)"
+                continue
+            }
+
+            // Append to combined dataset
+            if `combined_initialized' {
+                append using "`comments_combined'"
+            }
+            else {
+                local combined_initialized 1
+            }
+
+            save "`comments_combined'", replace
         }
+        di as txt "  {txt}Processed {res}`f_clean' {txt}({res}" _N " {txt}comments)"
     }
 
     if `combined_initialized' == 0 {
-        di as err "No comments data found in any CSV files"
-        exit 499
+        di as err "No valid comments data found in any CSV files"
+        exit 601
     }
 
     use "`comments_combined'", clear
+    di as txt "{txt}Combined {res}" _N " {txt}comments from {res}" wordcount("`filenames'") " {txt}file(s)"
 
-    // Save raw comments data before merging with survey
-    // This saves the unprocessed comments data to comments_raw.dta for record-keeping and debugging
+    // Save raw comments data before processing
     local rawfile "comments_raw.dta"
     local rawpath "`path_clean'`dirsep'`rawfile'"
-    if "`dirsep'" == "\" {
-        local rawpath = subinstr("`rawpath'", "/", "\", .)
-    }
-    capture save "`rawpath'", replace
-    if _rc {
-        di as err "Failed to save raw comments file: `rawpath'"
-        exit 198
-    }
+    quietly save "`rawpath'", replace
+    di as txt "{txt}Saved raw comments to: {res}`rawpath'"
 
+    // Parse fieldname to extract variable name and repeat instances
     // Split fieldname by slash to extract hierarchy (e.g., group/repeat/field)
-    capture split fieldname, p(/)
-    if _rc {
-        di as err "Failed to split fieldname variable"
+    quietly split fieldname, p(/) gen(fld)
+    
+    // Find the last non-empty component (the actual variable name)
+    quietly ds fld*
+    local max_fld: word count `r(varlist)'
+    gen str variable = ""
+    forvalues i = `max_fld'(-1)1 {
+        quietly replace variable = fld`i' if variable == "" & fld`i' != ""
     }
-
-    // Derive variable from the last non-empty component
-    // This loop checks up to 20 possible split segments, but works if fewer exist
-    // It finds the last non-empty fieldname component, which is usually the variable name
-    gen variable = ""
-    forvalues i = 1/20 {
-        forvalues k = 1/20 {
-            if `i' != `k' {
-                cap replace variable = fieldname`i' if fieldname`k' == "" & fieldname`i' != ""
-            }
+    
+    // Extract repeat instance numbers from fieldname components
+    gen str inst1 = ""
+    gen str inst2 = ""
+    forvalues i = 1/`max_fld' {
+        quietly replace inst1 = regexs(1) if regexm(fld`i', "repeat_.+\[(\d+)\]") & inst1 == ""
+        local j = `i' + 1
+        if `j' <= `max_fld' {
+            quietly replace inst2 = regexs(1) if regexm(fld`j', "repeat_.+\[(\d+)\]") & inst1 != "" & inst2 == ""
         }
     }
-    cap replace variable = fieldname20 if fieldname20 != ""
-
-    // Extract repeat instances for variables from a repeat group
-    // This looks for repeat group patterns in the split fieldname components
-    gen inst1 = ""
-    gen inst2 = ""
-    cap gen fieldname21 = ""
-    forvalues i = 1/19 {
-        local p = `i' + 1
-        // inst1: first repeat instance found
-        cap replace inst1 = regexs(1) if regexm(fieldname`i', "repeat_.+\[(\d+)\]") & inst1 == ""
-        // inst2: second repeat instance if present
-        cap replace inst2 = regexs(1) if regexm(fieldname`p', "repeat_.+\[(\d+)\]") & inst1 != ""
-    }
-
-    // Construct variable with repeat instances
-    // If both inst1 and inst2 are found, append both; else just inst1; else just variable
-    gen repeat_inst = ""
-    replace repeat_inst = variable + "_" + inst1 + "_" + inst2 if (inst1 != "" & inst2 != "")
-    replace repeat_inst = variable + "_" + inst1 if inst2 == "" & repeat_inst == "" & inst1 != ""
-    replace repeat_inst = variable if repeat_inst == ""
-    drop variable
-    rename repeat_inst variable
-
-    // Apply stripgrp as the final step to ensure all grp_ prefixes are removed
+    
+    // Construct variable name with repeat instance identifiers
+    quietly replace variable = variable + "_" + inst1 + "_" + inst2 if inst1 != "" & inst2 != ""
+    quietly replace variable = variable + "_" + inst1 if inst1 != "" & inst2 == ""
+    
+    // Apply stripgrp option to remove "grp_" prefix
     if "`stripgrp'" != "" {
-        replace variable = subinstr(variable, "grp_", "", .)
+        quietly replace variable = regexr(variable, "^grp_", "")
     }
-
+    
+    // Drop processing variables
+    drop fld* inst1 inst2
+    
+    // Keep only valid observations
     keep if comment != "" & variable != ""
-    // keep if comment != ""
+    
+    // Generate key for merging
+    gen str key = "uuid:" + uuid
+    drop uuid file
 
-    // Generate key
-    gen key = "uuid:" + id
-    drop id
-
-    // Merge with survey dataset to populate caseid, fo_id
-    if "`survey'" == "" {
-        di as err "survey option is required to populate caseid"
-        exit 198
-    }
-    capture confirm file `"`survey'"'
-    if _rc {
-        di as err "Survey file not found: `survey'"
-        exit 198
-    }
-    else {
-        preserve
-        use `"`survey'"', clear
-        capture confirm variable `caseid'
+    // Merge with survey dataset if specified
+    if "`survey'" != "" {
+        capture confirm file `"`survey'"'
         if _rc {
-            di as err "Variable `caseid' not found in survey dataset"
-            exit 198
+            di as err "Survey file not found: `survey'"
+            exit 601
         }
-        // Check for keepvars in survey dataset, issue warning if absent
-        local keepvars_count : word count `keepvars_list'
-        forvalues i = 1/`keepvars_count' {
-            local var = word("`keepvars_list'", `i')
-            capture confirm variable `var'
-            if _rc {
-                di as warn "Variable `var' not found in survey dataset, will be empty"
-            }
-        }
-        restore
-        merge m:1 key using `"`survey'"', keep(match) nogen
-        // Always generate caseid and keepvars, populate if present
-        replace `caseid' = `caseid' if !missing(`caseid')
-        foreach var of local keepvars_list {
-            capture gen `var' = ""
-            if _rc {
-                replace `var' = "" if missing(`var')
-            }
-            capture confirm variable `var'
+        
+        tempfile comments_data
+        quietly save "`comments_data'"
+        
+        // Load survey data and identify caseid variable
+        quietly use `"`survey'"', clear
+        quietly ds
+        local survey_vars `r(varlist)'
+        
+        // Try to identify caseid variable
+        local caseid_var ""
+        foreach v in caseid hhid instanceid submissionid key {
+            capture confirm variable `v'
             if !_rc {
-                replace `var' = `var' if !missing(`var')
+                local caseid_var `v'
+                continue, break
             }
         }
-    }
-
-    // Pull values and labels if use() provided
-    tempvar num_val str_val label_val
-    gen `num_val' = .
-    gen `str_val' = ""
-    gen `label_val' = ""
-
-    if "`use'" != "" {
-        capture confirm file `"`use'"'
-        if _rc == 0 {
-            tempfile current_data
-            save "`current_data'", replace
-            use `"`use'"', clear
-            ds, has(type numeric)
-            local num_vars `r(varlist)' // List of all numeric vars
-            ds, has(type string)
-            local str_vars `r(varlist)' // List of all string vars
-            merge 1:m key using "`current_data'", keep(match using) nogen
+        
+        // Check if key exists for merging
+        capture confirm variable key
+        if _rc {
+            di as err "Survey dataset must contain a 'key' variable for merging"
+            exit 109
         }
-        else {
-            di as err "Warning: file specified in use() not found: `use'"
+        
+        // Build list of variables to keep from survey
+        local merge_vars "key `caseid_var' `keepvars'"
+        local merge_vars: list uniq merge_vars
+        
+        // Verify keepvars exist
+        foreach v of local keepvars {
+            capture confirm variable `v'
+            if _rc {
+                di as txt "{txt}Warning: Variable {res}`v' {txt}not found in survey dataset"
+                local merge_vars: list merge_vars - v
+            }
         }
+        
+        keep `merge_vars'
+        
+        // Merge comments with survey data
+        quietly merge 1:m key using "`comments_data'", keep(match) nogen
+        
+        // Extract values and labels for commented variables
+        quietly use `"`survey'"', clear
+        
+        // Get numeric and string variable lists
+        quietly ds, has(type numeric)
+        local num_vars `r(varlist)'
+        quietly ds, has(type string)
+        local str_vars `r(varlist)'
+        
+        quietly merge 1:m key using "`comments_data'", keep(match using) nogen
+        
+        // Create value and label columns using frval() and variable labels
+        gen str value = ""
+        gen str label_val = ""
+        
+        foreach v of local num_vars {
+            capture confirm variable `v'
+            if !_rc {
+                quietly replace value = string(`v') if variable == "`v'" & missing(value)
+                local vlab: variable label `v'
+                if `"`vlab'"' != "" {
+                    quietly replace label_val = `"`vlab'"' if variable == "`v'"
+                }
+            }
+        }
+        
+        foreach v of local str_vars {
+            capture confirm variable `v'
+            if !_rc {
+                quietly replace value = `v' if variable == "`v'" & missing(value)
+                local vlab: variable label `v'
+                if `"`vlab'"' != "" {
+                    quietly replace label_val = `"`vlab'"' if variable == "`v'"
+                }
+            }
+        }
+        
+        // Keep only relevant columns
+        local final_vars "`caseid_var' `keepvars' variable comment value label_val"
+        local final_vars: list uniq final_vars
+        keep `final_vars'
+        
+        di as txt "{txt}Merged with survey data: {res}" _N " {txt}comments matched"
     }
     else {
-        // If no use() provided, use all variables from current dataset
-        ds, has(type numeric)
-        local num_vars `r(varlist)' // List of all numeric vars
-        ds, has(type string)
-        local str_vars `r(varlist)' // List of all string vars
+        // No survey merge - keep basic columns
+        order variable comment fieldname key
+        di as txt "{txt}No survey data merged (use survey() option to add caseid and values)"
     }
 
-    // Loop through each observation to assign values and labels
-    forval i = 1/`=_N' {
-        local varname = variable[`i']
-        // Check numeric variables
-        foreach num_var of local num_vars {
-            if "`varname'" == "`num_var'" {
-                quietly replace `num_val' = `num_var'[`i'] in `i'
-                quietly replace `label_val' = "`: var label `num_var''" in `i'
-                continue
-            }
+    // Save output dataset
+    if "`nosave'" == "" {
+        local outfile "`out'"
+        if !regexm("`outfile'", "^[A-Za-z]:") & !inlist(substr("`outfile'", 1, 1), "/", "\") {
+            local outfile "`path_clean'`dirsep'`out'"
         }
-        // Check string variables
-        foreach str_var of local str_vars {
-            if "`varname'" == "`str_var'" {
-                quietly replace `str_val' = `str_var'[`i'] in `i'
-                quietly replace `label_val' = "`: var label `str_var''" in `i'
-                continue
-            }
-        }
+        
+        quietly save `"`outfile'"', replace
+        
+        local obs_count = _N
+        di as txt "{txt}Saved final dataset to: {res}`outfile'"
+        di as txt "{txt}Dataset contains {res}`obs_count' {txt}comment observation(s)"
     }
-
-    tostring `num_val', replace force
-    replace `str_val' = `num_val' if `str_val' == "" & `num_val' != "."
-    drop `num_val'
-    rename `str_val' value
-    rename `label_val' label_val
-
-    // Keep only the specified variables
-    local keep_list `caseid' `keepvars_list' variable comment value label_val
-    keep `keep_list'
-
-    // Save output
-    local outfile "`out'"
-    if !regexm("`outfile'", "^[A-Za-z]:") & !inlist(substr("`outfile'", 1, 1), "/", "\") {
-        local outfile "`path_clean'`dirsep'`out'"
+    else {
+        di as txt "{txt}Data loaded in memory (nosave option specified)"
+        di as txt "{txt}Dataset contains {res}" _N " {txt}comment observation(s)"
     }
-    if "`dirsep'" == "\" {
-        local outfile = subinstr("`outfile'", "/", "\", .)
-    }
-
-    capture save `"`outfile'"', replace
-    if _rc {
-        di as err "Failed to save output file: `outfile'"
-        exit 198
-    }
-
-    local obs_count = _N
-    di as txt "Saved combined comments to `outfile'"
-    di as txt "Dataset contains `obs_count' comment observations"
 
 end

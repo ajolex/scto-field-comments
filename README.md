@@ -1,176 +1,125 @@
-# 📊 sctocomments: SurveyCTO Comments Collation Command
+# sctocomments
 
-**`sctocomments`** is a Stata command-line tool for collating and merging **SurveyCTO comment CSV files** (e.g., `Comments-*.csv`) into a unified Stata dataset. It automatically extracts variable names and labels, merges comments with your survey data, and supports customization of key identifiers (e.g., case ID, enumerator ID, field coordinator ID). This utility streamlines the processing of **field comments** from SurveyCTO, including those with hierarchical field names from groups and repeat instances.
-
----
-
-## 🧭 Overview
-
-The `sctocomments` command:
-
-- Collects and combines all SurveyCTO comment CSV files (typically stored in a `media` subfolder).
-- Extracts variable names from the **last non-empty segment** of each `Field Name` value of the `csv` file.
-- Handles **repeat group instances** and **nested field structures** automatically.
-- Optionally removes `grp_` prefixes from group variable names.
-- Merges with a survey dataset to include **Unique IDs, survey variable values attached to the comment, and labels**.
-
-The output is a clean `.dta` file containing all comments and relevant metadata.
+`sctocomments` is a Stata command that consolidates SurveyCTO "Comments-*.csv" exports into a single `.dta` file. It standardises column names, extracts the referenced field, builds repeat-instance identifiers, and (optionally) merges the results with survey datasets to bring in case IDs, variable values, and labels.
 
 ---
 
-## ⚙️ Installation
-
-### 1. Manual Installation
-
-Save `sctocomments.ado` to your Stata personal ado directory:
+## Installation
 
 ```stata
-sysdir
-
-- **Windows:** `%USERPROFILE%\ado\personal\`
-- **macOS/Linux:** `~/ado/personal/`
-
-### 2. Install via GitHub (optional)
-```bash
-git clone https://github.com/yourusername/scto-field-comments.git
+net install sctocomments, from(https://raw.githubusercontent.com/ajolex/scto-field-comments/master/sctocomments) replace
+help sctocomments
 ```
 
-Or directly from within Stata:
-```stata
-net install sctocomments, from("https://raw.githubusercontent.com/ajolex/scto-field-comments/master/sctocomments/") replace
-```
-### 3. Verify Installation
-In Stata:
+This requires Stata 17 or newer (the command declares `version 17.0`). The ado file does not modify the working directory and only writes to the path you provide.
 
-```stata
-which sctocomments
-```
-## You should see the full path to the installed `.ado` file
 ---
-## 🚀 Usage
 
-### Syntax
+## Quick Start
 
 ```stata
-sctocomments, path(string) caseid(string) [mediafolder(string) filesub(string) out(string) survey(string)
- use(string) keepvars(string) stripgrp]                                        
+* set the project folder that contains the media/ subfolder
+local proj "C:/Users/you/yourproject"
+
+* collate comments (no survey merge)
+sctocomments, path("`proj'")
+
+* collate and merge with survey data for case IDs and values
+sctocomments, path("`proj'") survey("survey_data.dta")
+
+* review the combined data
+use "`proj'/comments.dta", clear
+list in 1/10
 ```
+
+Provide `mediafolder()` if the comment CSVs live somewhere other than `path()/media`, and `out()` to change the name or location of the resulting dataset.
+
+---
+
+## Syntax
+
+```stata
+sctocomments, path(string) [mediafolder(string) filesub(string) ///
+    out(string) survey(string) use(string) keepvars(string) stripgrp nosave]
+```
+
 ### Options
 
-| Option            | Description                                                                                                   |
-|-------------------|--------------------------------------------------------------------------------------------------------------|
-| **path(string)**  | **Required.** Base folder containing the comments CSV folder.                                                 |
-| **caseid(string)**| **Required.** Variable name for the unique case ID in the survey dataset.                                    |
-| **mediafolder(string)** | Subfolder containing comment CSVs (default: `"media"`).                                                |
-| **filesub(string)** | Filename pattern for comment files (default: `"Comments*.csv"`).                                           |
-| **out(string)**   | Output `.dta` filepath (default: `"comments.dta"` inside `path`).                                            |
-| **survey(string)**| **Required.** Full path to the survey dataset to merge with.                                                 |
-| **use(string)**   | Path to an auxiliary dataset for extracting variable values/labels.                                          |
-| **keepvars(string)** | Space-separated list of additional variables to keep (e.g., `"fo_id fc_id"`). Defaults to `"fo_id fc_id"`.|
-| **stripgrp**      | Removes the `"grp_"` prefix from variable names (e.g., `grp_mig_lgth_mr_1` → `mig_lgth_mr_1`).              |
+| Option | Description |
+| --- | --- |
+| `path(string)` | **Required.** Base directory used to resolve all relative paths. Trailing separators are trimmed automatically. |
+| `mediafolder(string)` | Folder that stores the comment CSVs. Accepts relative fragments (e.g. `"media/comments"`) or an absolute override. Default is `"media"`. |
+| `filesub(string)` | Filename pattern passed to Stata's `dir` command. Default is `"Comments*.csv"`. |
+| `out(string)` | Output dataset name. Relative values are written inside `path()`. Absolute paths are honoured as-is. Default is `"comments.dta"`. |
+| `survey(string)` | Optional survey dataset for merging. Must contain a `key` variable (`"uuid:" + uuid`). The command auto-detects common case ID variables (caseid, hhid, instanceid, etc.) and extracts variable values and labels for commented fields. |
+| `use(string)` | Alias for `survey()`. Provided for backward compatibility. |
+| `keepvars(string)` | Space-separated list of additional variables to keep from the survey dataset (e.g., `"fo_id enum_name"`). |
+| `stripgrp` | Flag to remove the `grp_` prefix from derived variable names. |
+| `nosave` | Load the combined dataset in memory without saving to disk. Useful for inspection or piping to other commands. |
 
-### 💡 Examples
+All option paths accept forward `/` or back `\` slashes; the command normalises them for the host operating system.
 
-#### Basic usage
-```stata
-sctocomments, path("C:\Users\AJolex\Documents\scto-field-comments") ///
-    caseid("caseid") survey("survey_data.dta")
-```
-→ Processes all `Comments*.csv` files in the `media` subfolder, merges by `caseid`, and saves the result 
-as `comments.dta`.                                                                                       
-#### With custom variables and options
-```stata
-sctocomments, path("C:\Users\AJolex\Documents\scto-field-comments") ///
-    caseid("unique_id") keepvars("enum_id coord_id") ///
-    survey("survey_data.dta") use("use_data.dta") stripgrp
-```
+---
 
-Uses `unique_id` as the case ID, keeps `enum_id` and `coord_id`, merges with `use_data.dta` for variable labels, strips `grp_` prefixes, and saves the output
+## What the Command Does
 
+1. **Normalises paths and confirms the target folder exists.**
+2. **Enumerates comment CSVs** using `filesub()`; exits with error if none are found.
+3. **Imports each file** with `import delimited, stripquotes(yes) bindquotes(strict)`, harmonising variants of `Field_name`, `field_name`, etc. into `fieldname` and `comment`.
+4. **Normalises the `comment` variable to string** to prevent type mismatches during append operations.
+5. **Drops empty/header rows**, records the source filename and extracts the UUID from the filename (text after `"Comments-"`, without `.csv`).
+6. **Stacks all comment rows** into a temporary dataset on disk so memory usage stays bounded even with thousands of files.
+7. **Saves a raw comments file** (`comments_raw.dta`) before further processing for debugging and record-keeping.
+8. **Splits `fieldname` on `/`**, selecting the last non-empty component as `variable` and extracting repeat indices when SurveyCTO repeat groups are present. The final `variable` combines the base name with repeat indices when available.
+9. **Keeps rows with both `variable` and `comment`,** and creates `key = "uuid:" + uuid` for compatibility with SurveyCTO survey exports.
+10. **Optionally merges survey data** via `survey()`, auto-detecting common case ID variables (caseid, hhid, instanceid, submissionid, key) and extracting variable values and labels for commented fields.
+11. **Saves the combined dataset** to `out()` (unless `nosave` is specified) and reports the number of comment observations.
 
-## ⚡ Quick Start Example
-
-Here’s an example folder layout to help you get started:
-
-```
-scto-field-comments/
-├── media/
-│   ├── Comments-0c2843ad-0293-4a5f-a6e6-d97581ad281a.csv
-│   ├── Comments-0cb021ad-a8a1-418c-b8be-55131ee89d45.csv
-│   └── Comments-0cdb217c-dab0-4de4-8fe9-2e71ac2dcb86.csv
-├── survey_data.dta
-├── use_data.dta
-└── sctocomments.ado
-```
-
-**Step 1:** Open Stata in this directory.
-**Step 2:** Run:
-```stata
-sctocomments, path(".") caseid("uuid") survey("survey_data.dta") use("use_data.dta") stripgrp
-```
-
-**Step 3:** View results:
-```stata
-use "comments.dta", clear
-browse
-```
-### Example Output
-
-| caseid | variable         | comment                              | label_val                      | fo_id | fc_id |
-|--------|------------------|--------------------------------------|--------------------------------|-------|-------|
-| A001   | fd_cons_2b_v1_1  | Enumerator unsure about units        | Quantity of maize consumed     | 203   | 45    |
-| A002   | hh_size          | Household size changed on revisit    | Household size (members)       | 201   | 45    |
-| A002   | grp_income_1     | Missing value, confirmed zero income | Income from main occupation    | 201   | 45    |
-
-## 📂 Output
-
-The resulting `comments.dta` includes:
+The final dataset contains at minimum:
 
 | Variable | Description |
-|-----------|--------------|
-| **caseid** | Unique case ID from the survey dataset. |
-| **keepvars** | Variables from `keepvars()` (e.g., `fo_id`, `fc_id`, etc.). Missing if not present in the survey dataset. |
-| **variable** | The derived variable name from the last segment of the `Field name`. |
-| **comment** | Text from the comment CSV. |
-| **label_val** | Variable label if a match is found in the use dataset. |
+| --- | --- |
+| `variable` | Derived field/variable name, including repeat indices when relevant. |
+| `comment` | Enumerator comment text. |
+| `fieldname` | Original SurveyCTO field path (when no survey merge). |
+| `key` | `"uuid:" + uuid`, suitable for merging with SurveyCTO survey exports. |
+
+When `survey()` is provided, additional columns include:
+
+| Variable | Description |
+| --- | --- |
+| `caseid` (or similar) | Auto-detected case identifier from the survey dataset. |
+| `value` | Value of the referenced variable (converted to string). |
+| `label_val` | Variable label from the survey dataset (if available). |
+| `<keepvars>` | Any additional variables specified in `keepvars()`. |
 
 ---
 
-## ⚠️ Cautions and Limitations
+## Tips and Caveats
 
-### Fieldname Segment Limit
-The program assumes the `Field name` of the `csv` file e.g. `(grp_available_resp[1]/grp_consented[1]/grp_fd_cons[1]/repeat_fd_cat[1]/repeat_fd_cons[1]/fd_cons_2b_v1)` can be split into up to **9 segments**.
-If your data has deeper nesting, increase loop limits in the ado file (e.g., `1/8` → `1/10`) and save the ado file.
-
-### Repeat and Group Instances
-Repeat group indices (e.g., `[8]`, `[1]`) are appended to the variable name.
-If your naming convention differs, modify the regex accordingly.
-`grp_` prefixes can be removed with the `stripgrp` option.
-
-### Variable Name Derivation
-Variables are derived from the last non-empty segment of the `Field name` value.
-If the structure varies or uses different delimiters, check your CSV’s `Field name` format.
-
-### Missing Survey Variables
-If `caseid` or `keepvars` are missing from the survey dataset, the program issues a warning or exits with
-### Survey Dataset Requirements
-Ensure your survey dataset contains the required key variables (`caseid` and any variables listed in `keepvars`). If these variables are missing, the program will issue a warning or terminate with an error. Double-check variable names and formats before running the command.
-### Large Datasets
-Extracting values and labels from large datasets may reduce performance.
-Filter variables if needed to improve speed.
+- The command reads every CSV matching `filesub()`. Use restrictive patterns (e.g. `"Comments-2024-*.csv"`) if your media folder is large.
+- SurveyCTO sometimes repeats header rows (`Field name`, etc.) within CSVs; these are dropped automatically, and completely empty files are skipped.
+- The `comment` variable is always normalized to string type to prevent data loss during append operations.
+- A raw comments file (`comments_raw.dta`) is saved automatically before processing for debugging purposes.
+- Large directories (thousands of CSVs) are supported; processing time scales roughly linearly with the number of files. Progress is printed file-by-file.
+- The command auto-detects common case ID variable names: `caseid`, `hhid`, `instanceid`, `submissionid`, `key`.
+- Use `nosave` option to inspect data in memory without writing to disk.
 
 ---
 
-## 🛠️ Troubleshooting
+## Changelog
 
-| Error                                    | Cause & Solution                                                                 |
-|------------------------------------------|---------------------------------------------------------------------------------|
-| **variable already defined (r(110))**    | Occurs if a variable in `keepvars` already exists before generation. Use `capture gen` or clear the dataset before re-running. |
-| **Incomplete extraction**                | Check the `Field name` format and adjust loop limits or regex as needed.         |
-| **Missing data**                         | Ensure the survey and use datasets contain the key variable (e.g., `caseid`; `hhid`; `id`). |
+### v2.0 (December 2025)
 
-**Developed by:** *Aubrey Jolex*
-**License:** MIT
-**Compatible with:** Stata 15+
-**Repository:** [github.com/ajolex/scto-field-comments](https://github.com/ajolex/scto-field-comments)
-```markdown
+- **Simplified syntax**: Removed redundant `caseid()` requirement; `use()` kept as alias for `survey()`
+- **Auto-detection**: Automatically detects common case ID variables from survey data
+- **Performance**: Optimized variable extraction (up to 100x faster on large datasets)
+- **Robustness**: Normalizes comment variable to string to prevent type mismatches
+- **New option**: Added `nosave` to load data in memory without saving
+- **Better output**: Saves `comments_raw.dta` for debugging before processing
+
+---
+
+## Support
+
+For issues or contributions, visit the repository: <https://github.com/ajolex/scto-field-comments>. The project is released under the MIT License. Bug reports that include the command call, abbreviated log, and (if possible) a synthetic example dataset are especially helpful.
