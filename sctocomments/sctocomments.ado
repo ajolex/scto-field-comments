@@ -113,7 +113,7 @@ program define sctocomments, rclass
             
             // Normalize comment to string to avoid type mismatches during append
             capture confirm string variable comment
-            if _rc tostring comment, replace
+            if _rc tostring comment, replace force
             
             // Skip if no data
             if _N == 0 {
