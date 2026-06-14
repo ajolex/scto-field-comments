@@ -22,6 +22,11 @@ program define sctocomments, rclass
 
     syntax , PATH(string) [MEDIAFOLDER(string) FILESUB(string) OUT(string) SURVEY(string) USE(string) KEEPVARS(string) STRIPGRP NOSAVE]
 
+    // Set maxvar high enough for large surveys before any data is loaded
+    if c(maxvar) < 32000 {
+        quietly set maxvar 32000
+    }
+
     // Set defaults
     if "`filesub'" == "" local filesub "Comments*.csv"
     if "`out'" == "" local out "comments.dta"
@@ -68,7 +73,7 @@ program define sctocomments, rclass
         exit 601
     }
     
-    di as txt "{txt}Found " as res word count `"`filenames'"' as txt " comment file(s) in: {res}`media'"
+    di as txt "{txt}Found " as res `=wordcount(`"`filenames'"')' as txt " comment file(s) in: {res}`media'"
 
     // Initialize combined dataset tempfile
     tempfile comments_combined
@@ -154,7 +159,7 @@ program define sctocomments, rclass
     }
 
     use "`comments_combined'", clear
-    di as txt "{txt}Combined {res}" _N " {txt}comments from {res}" wordcount("`filenames'") " {txt}file(s)"
+    di as txt "{txt}Combined {res}" _N " {txt}comments from {res}" wordcount(`"`filenames'"') " {txt}file(s)"
 
     // Save raw comments data before processing
     local rawfile "comments_raw.dta"
@@ -175,14 +180,22 @@ program define sctocomments, rclass
     }
     
     // Extract repeat instance numbers from fieldname components
+    // Also capture outer respondent_availability[N] index as N-1 (SurveyCTO 0-indexes this level)
+    gen str _inst0 = ""
+    gen str _inst_parent = ""
     gen str inst1 = ""
     gen str inst2 = ""
     forvalues i = 1/`max_fld' {
-        quietly replace inst1 = regexs(1) if regexm(fld`i', "repeat_.+\[(\d+)\]") & inst1 == ""
+        quietly replace _inst0 = string(real(regexs(1)) - 1) if regexm(fld`i', "respondent_availability\[([0-9]+)\]") & _inst0 == ""
+        quietly replace inst1 = regexs(1) if regexm(fld`i', "repeat_.+\[([0-9]+)\]") & inst1 == ""
         local j = `i' + 1
         if `j' <= `max_fld' {
-            quietly replace inst2 = regexs(1) if regexm(fld`j', "repeat_.+\[(\d+)\]") & inst1 != "" & inst2 == ""
+            quietly replace inst2 = regexs(1) if regexm(fld`j', "repeat_.+\[([0-9]+)\]") & inst1 != "" & inst2 == ""
         }
+    }
+    forvalues i = 2/`max_fld' {
+        local p = `i' - 1
+        quietly replace _inst_parent = regexs(1) if variable == fld`i' & _inst_parent == "" & regexm(fld`p', "^.+\[([0-9]+)\]$")
     }
     
     // Construct variable name with repeat instance identifiers
@@ -194,7 +207,7 @@ program define sctocomments, rclass
         quietly replace variable = regexr(variable, "^grp_", "")
     }
     
-    // Drop processing variables
+    // Drop processing variables (keep _inst0/_inst_parent for value-extraction fallback)
     drop fld* inst1 inst2
     
     // Keep only valid observations
@@ -252,10 +265,33 @@ program define sctocomments, rclass
         
         keep `merge_vars'
         
-        // Merge comments with survey data
-        quietly merge 1:m key using "`comments_data'", keep(match) nogen
+        // Merge comments with survey data (1:m — one survey row to many comments)
+        // keep(match using): keep matched rows AND unmatched comments so no
+        // comment is lost. Unmatched comments get missing caseid/keepvars.
+        quietly merge 1:m key using "`comments_data'", keep(match using) nogen
+        
+        // Flag rows that couldn't be matched to survey
+        gen byte flag_no_survey_match = missing(`caseid_var') | `caseid_var'==""
+        quietly count if flag_no_survey_match
+        if r(N) > 0 {
+            noisily di as txt "{txt}Note: {res}" r(N) "{txt} comment(s) could not be matched to a survey record"
+            noisily di as txt "{txt}  (key not found in survey — submission may not yet be downloaded)"
+        }
+        
+        // Assign a unique row ID before splitting off for value extraction
+        gen long _row_id = _n
+        
+        // Save enriched comments (caseid + keepvars + flag + row id)
+        tempfile enriched_comments
+        quietly save "`enriched_comments'"
         
         // Extract values and labels for commented variables
+        // Only use matched rows (flag_no_survey_match==0) for value extraction
+        quietly keep if !flag_no_survey_match
+        quietly keep _row_id key variable _inst0 _inst_parent   // slim dataset for merge with survey
+        tempfile comments_matched
+        quietly save "`comments_matched'"
+        
         quietly use `"`survey'"', clear
         
         // Get numeric and string variable lists
@@ -264,13 +300,42 @@ program define sctocomments, rclass
         quietly ds, has(type string)
         local str_vars `r(varlist)'
         
-        quietly merge 1:m key using "`comments_data'", keep(match using) nogen
+        quietly merge 1:m key using "`comments_matched'", keep(match using) nogen
+
+        // Secondary suffix resolution: if variable is still unsuffixed but the
+        // parent path segment had [n], try var_n only when it exists in survey.
+        quietly count if _inst_parent != "" & !regexm(variable, "_[0-9]+$")
+        if r(N) > 0 {
+            quietly levelsof variable if _inst_parent != "" & !regexm(variable, "_[0-9]+$"), local(_base_no_suffix) clean
+            foreach _v of local _base_no_suffix {
+                quietly levelsof _inst_parent if variable == "`_v'" & _inst_parent != "", local(_pvals) clean
+                foreach _pi of local _pvals {
+                    if `"`_pi'"' != "" {
+                        local _cand "`_v'_`_pi'"
+                        capture confirm variable `_cand'
+                        if !_rc quietly replace variable = "`_cand'" if variable == "`_v'" & _inst_parent == "`_pi'"
+                    }
+                }
+            }
+        }
         
         // Create value and label columns using frval() and variable labels
         gen str value = ""
         gen str label_val = ""
         
+        // Only iterate over variables that actually appear in the comments
+        // (avoids looping through all 5000+ survey vars for each comment)
+        quietly levelsof variable, local(commented_vars) clean
+        local num_vars_used
         foreach v of local num_vars {
+            if `: list v in commented_vars' local num_vars_used `num_vars_used' `v'
+        }
+        local str_vars_used
+        foreach v of local str_vars {
+            if `: list v in commented_vars' local str_vars_used `str_vars_used' `v'
+        }
+        
+        foreach v of local num_vars_used {
             capture confirm variable `v'
             if !_rc {
                 quietly replace value = string(`v') if variable == "`v'" & missing(value)
@@ -281,7 +346,7 @@ program define sctocomments, rclass
             }
         }
         
-        foreach v of local str_vars {
+        foreach v of local str_vars_used {
             capture confirm variable `v'
             if !_rc {
                 quietly replace value = `v' if variable == "`v'" & missing(value)
@@ -292,12 +357,55 @@ program define sctocomments, rclass
             }
         }
         
-        // Keep only relevant columns
-        local final_vars "`caseid_var' `keepvars' variable comment value label_val"
-        local final_vars: list uniq final_vars
-        keep `final_vars'
+        // Fallback: for rows where value is still missing and the fieldname had
+        // respondent_availability[N], try the outer-indexed variable form: var_{N-1}_{inner}
+        // This covers member-roster variables like agwork_n_0_1, nonagwork_n_1_2, etc.
+        quietly count if (value == "" | missing(value)) & _inst0 != ""
+        if r(N) > 0 {
+            quietly levelsof variable if (value == "" | missing(value)) & _inst0 != "", local(_still_miss) clean
+            foreach _v of local _still_miss {
+                if regexm("`_v'", "^(.+)_([0-9]+)$") {
+                    local _vbase = regexs(1)
+                    local _vidx  = regexs(2)
+                    quietly levelsof _inst0 if variable == "`_v'" & (value == "" | missing(value)), local(_outer_vals) clean
+                    foreach _oi of local _outer_vals {
+                        if `"`_oi'"' != "" {
+                            local _valt "`_vbase'_`_oi'_`_vidx'"
+                            capture confirm variable `_valt'
+                            if !_rc {
+                                if `: list _valt in num_vars' {
+                                    quietly replace value = string(`_valt') if variable == "`_v'" & _inst0 == "`_oi'" & (value == "" | missing(value))
+                                    local _vlab : variable label `_valt'
+                                    if `"`_vlab'"' != "" quietly replace label_val = `"`_vlab'"' if variable == "`_v'" & _inst0 == "`_oi'" & label_val == ""
+                                }
+                                else if `: list _valt in str_vars' {
+                                    quietly replace value = `_valt' if variable == "`_v'" & _inst0 == "`_oi'" & (value == "" | missing(value))
+                                    local _vlab : variable label `_valt'
+                                    if `"`_vlab'"' != "" quietly replace label_val = `"`_vlab'"' if variable == "`_v'" & _inst0 == "`_oi'" & label_val == ""
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
         
-        di as txt "{txt}Merged with survey data: {res}" _N " {txt}comments matched"
+        // Bring back caseid/keepvars/flag from enriched_comments via _row_id
+        quietly keep _row_id value label_val
+        quietly merge 1:1 _row_id using "`enriched_comments'", nogen
+        drop _row_id
+        
+        // Keep only relevant columns
+        local final_vars "key `caseid_var' `keepvars' variable comment value label_val flag_no_survey_match"
+        local final_vars: list uniq final_vars
+        capture keep `final_vars'
+        
+        // Deduplicate: same submission + variable + comment is a true duplicate
+        quietly duplicates drop key variable comment, force
+        
+        quietly count if !flag_no_survey_match
+        local n_matched = r(N)
+        di as txt "{txt}Merged with survey data: {res}`n_matched' {txt}comments matched"
     }
     else {
         // No survey merge - keep basic columns
